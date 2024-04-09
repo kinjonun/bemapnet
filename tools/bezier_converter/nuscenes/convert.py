@@ -1,5 +1,6 @@
 import os
 import argparse
+import pdb
 import numpy as np
 from tqdm import tqdm
 from nuscenes import NuScenes
@@ -14,9 +15,9 @@ class NuScenesDataset(Dataset):
         super(NuScenesDataset, self).__init__()
         patch_h = ybound[1] - ybound[0]
         patch_w = xbound[1] - xbound[0]
-        canvas_h = int(patch_h / ybound[2])
-        canvas_w = int(patch_w / xbound[2])
-        self.patch_size = (patch_h, patch_w)
+        canvas_h = int(patch_h / ybound[2])           # 200
+        canvas_w = int(patch_w / xbound[2])           # 400
+        self.patch_size = (patch_h, patch_w)          # (30, 60)
         self.canvas_size = (canvas_h, canvas_w)
         self.nusc = NuScenes(version=version, dataroot=dataroot, verbose=False)
         self.vector_map = VectorizedLocalMap(dataroot, patch_size=self.patch_size, canvas_size=self.canvas_size)
@@ -26,11 +27,14 @@ class NuScenesDataset(Dataset):
 
     def __getitem__(self, idx):
         record = self.nusc.sample[idx]
+        print(record['token'])
         location = self.nusc.get('log', self.nusc.get('scene', record['scene_token'])['log_token'])['location']
         ego_pose = self.nusc.get('ego_pose',
                                  self.nusc.get('sample_data', record['data']['LIDAR_TOP'])['ego_pose_token'])
         vectors = self.vector_map.gen_vectorized_samples(location, ego_pose['translation'], ego_pose['rotation'])
         imgs, trans, rots, intrins = self.get_data_info(record)
+        # import pdb
+        # pdb.set_trace()
         return imgs, np.stack(trans), np.stack(rots), np.stack(intrins), vectors
 
     def get_data_info(self, record):
@@ -55,9 +59,13 @@ class NuScenesSemanticDataset(NuScenesDataset):
         location = self.nusc.get('log', self.nusc.get('scene', record['scene_token'])['log_token'])['location']
         ego_pose = self.nusc.get('ego_pose', self.nusc.get('sample_data', record['data']['LIDAR_TOP'])['ego_pose_token'])
         vectors = self.vector_map.gen_vectorized_samples(location, ego_pose['translation'], ego_pose['rotation'])
+        # import pdb
+        # pdb.set_trace()
         imgs, trans, rots, intrins = self.get_data_info(record)
         semantic_masks, instance_masks, instance_vec_points, instance_ctr_points = \
             self.raster_map.convert_vec_to_mask(vectors)
+        import pdb
+        # pdb.set_trace()
         return imgs, np.stack(trans), np.stack(rots), np.stack(intrins), semantic_masks, instance_masks, \
                vectors, instance_vec_points, instance_ctr_points
 
@@ -68,13 +76,13 @@ def main():
     parser.add_argument('-d', '--data_root', type=str, default='./data')
     parser.add_argument('-n', '--data_name', type=str, default='bemapnet')
     parser.add_argument('-v', '--version', nargs='+', type=str, default=['v1.0-test', 'v1.0-trainval'])
-    parser.add_argument("--num_degrees", nargs='+', type=int, default=[2, 1, 3])
+    parser.add_argument("--num_degrees", nargs='+', type=int, default=[2, 1, 3])    #  '+' 表示可以接受一个或多个值
     parser.add_argument("--thickness", nargs='+', type=int, default=[1, 8])
     parser.add_argument("--xbound", nargs=3, type=float, default=[-30.0, 30.0, 0.15])
     parser.add_argument("--ybound", nargs=3, type=float, default=[-15.0, 15.0, 0.15])
     args = parser.parse_args()
 
-    n_classes = len(args.num_degrees)  # 0 --> divider(d=2),  1 --> crossing(d=1),  2--> contour(d=3)
+    n_classes = len(args.num_degrees)            # 0 --> divider(d=2),  1 --> crossing(d=1),  2--> contour(d=3)
     save_dir = os.path.join(args.data_root, 'customer', args.data_name)
     os.makedirs(save_dir, exist_ok=True)
     for version in args.version:
@@ -85,6 +93,7 @@ def main():
             if os.path.exists(file_path):
                 continue
             item = dataset.__getitem__(idx)
+            # pdb.set_trace()
             np.savez_compressed(
                 file_path, image_paths=np.array(item[0]), trans=item[1], rots=item[2], intrins=item[3],
                 semantic_mask=item[4][0], instance_mask=item[5][0], instance_mask8=item[5][1],

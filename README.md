@@ -75,7 +75,7 @@
   - Generate Bezier-annotations from NuScenes's raw-annotations.
     ```shell
     cd /path/to/bemapnet
-    python3 tools/bezier_converter/nuscenes/convert.py -d ./data -n bemapnet
+    python3 tools/bezier_converter/nuscenes/convert.py -d ./data/nuscenes -n bemapnet
     ```
   - **OR** download from [here](https://github.com/er-muyue/BeMapNet/releases/download/v1.0/bemapnet.zip) and put it into `/path/to/bemapnet/data/nuscenes`
     ```shell
@@ -131,6 +131,8 @@
 - **b. Model Evaluation**
   ```shell
   bash run.sh test bemapnet_nuscenes_swint ${checkpoint-path}
+  bash run.sh test bemapnet_nuscenes_effb0 assets/weights/bemapnet_nuscenes_effb0_ep30_model.pth
+  
   ```
 
 - **c. Reproduce with one command**

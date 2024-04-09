@@ -52,8 +52,13 @@ class VectorizedLocalMap(object):
         patch_box = (map_pose[0], map_pose[1], self.patch_size[0], self.patch_size[1])
         patch_angle = quaternion_yaw(rotation) / np.pi * 180
 
+        # line_geom:  [('road_divider', [<shapely.geometry.linestring.LineString >, <shapely.geometry.linestring.LineString>]),
+        # ('lane_divider', [<shapely.geometry.linestring.LineString >, <shapely.geometry.linestring.LineString ])]
         line_geom = self.get_map_geom(patch_box, patch_angle, self.line_classes, location)
+        # import pdb
+        # pdb.set_trace()
         line_vector_dict = self.line_geoms_to_vectors(line_geom)
+        # pdb.set_trace()
 
         ped_geom = self.get_map_geom(patch_box, patch_angle, self.ped_crossing_classes, location)
         ped_vector_list = self.line_geoms_to_vectors(ped_geom)['ped_crossing']

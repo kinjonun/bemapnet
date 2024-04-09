@@ -1,3 +1,5 @@
+import pdb
+
 import cv2
 import numpy as np
 from shapely import affinity
@@ -26,10 +28,13 @@ class RasterizedLocalMap(object):
         for vector in vectors:
             if vector['pts_num'] >= 2:
                 vector_num_list[vector['type']].append(LineString(vector['pts'][:vector['pts_num']]))
-        ins_idx = 1  # instance-index
+        ins_idx = 1      # instance-index
         instance_masks = np.zeros(
             (len(self.thickness), self.max_channel, self.canvas_size[1], self.canvas_size[0]), np.uint8)
+        # import pdb
+        # pdb.set_trace()
         instance_vec_points, instance_ctr_points = [], []
+
         for cls_idx in range(self.max_channel):
             pbc_func = self.pbc_funcs[self.num_degrees[cls_idx]]
             masks, map_points, ctr_points, ins_idx = self.line_geom_to_mask(vector_num_list[cls_idx], ins_idx, pbc_func)
@@ -52,6 +57,9 @@ class RasterizedLocalMap(object):
         trans_y = -patch_y + patch_h / 2.0
         map_masks = np.zeros((len(self.thickness), *self.canvas_size), np.uint8)
         map_points, ctr_points = [], []
+        # import pdb
+        # pdb.set_trace()
+
         for line in layer_geom:
             new_line = line.intersection(self.patch)
             if not new_line.is_empty:
@@ -66,6 +74,7 @@ class RasterizedLocalMap(object):
                         map_points.append(pts.tolist())
                 else:
                     pts2 = self.patch_size - np.array(new_line.coords[:])[:, ::-1]
+                    # pdb.set_trace()
                     ctr_points.append(pbc_func(pts2))
                     new_line = affinity.scale(new_line, xfact=scale_width, yfact=scale_height, origin=(0, 0))
                     map_masks, idx = self.mask_for_lines(new_line, map_masks, self.thickness, idx, trans_type)
@@ -74,6 +83,7 @@ class RasterizedLocalMap(object):
         map_masks_ret = []
         for i in range(len(self.thickness)):
             map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
+            # pdb.set_trace()
         map_masks_ret = np.array(map_masks_ret)
         return map_masks_ret, map_points, ctr_points, idx
 
@@ -84,6 +94,7 @@ class RasterizedLocalMap(object):
         if len(coords) < 2:
             return mask, idx
         for i, t in enumerate(thickness):
+            # pdb.set_trace()
             if trans_type == 'index':
                 cv2.polylines(mask[i], [coords], False, color=idx, thickness=t)
                 idx += 1
