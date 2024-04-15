@@ -76,7 +76,7 @@ def main():
     parser.add_argument('-d', '--data_root', type=str, default='./data')
     parser.add_argument('-n', '--data_name', type=str, default='bemapnet')
     parser.add_argument('-v', '--version', nargs='+', type=str, default=['v1.0-test', 'v1.0-trainval'])
-    parser.add_argument("--num_degrees", nargs='+', type=int, default=[2, 1, 3])    #  '+' 表示可以接受一个或多个值
+    parser.add_argument("--num_degrees", nargs='+', type=int, default=[2, 1, 3])    #  '+'accepts one or more values
     parser.add_argument("--thickness", nargs='+', type=int, default=[1, 8])
     parser.add_argument("--xbound", nargs=3, type=float, default=[-30.0, 30.0, 0.15])
     parser.add_argument("--ybound", nargs=3, type=float, default=[-15.0, 15.0, 0.15])

@@ -22,6 +22,8 @@ class ResNetBackbone(nn.Module):
         images = images.view(-1, *images.shape[-3:])
         bkb_features = list(self.bkb(images)[-self.ret_layers:])
         nek_features = self.fpn(bkb_features) if self.fpn is not None else None
+        import pdb
+        pdb.set_trace()
         return {"im_bkb_features": bkb_features, "im_nek_features": nek_features}
 
 

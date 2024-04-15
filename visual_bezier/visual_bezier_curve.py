@@ -13,11 +13,13 @@ instance_mask = data['instance_mask']
 instance_mask8 = data['instance_mask8']
 ego_vectors = data['ego_vectors']
 ctr_points = data['ctr_points']
-color={0:'red',1:'blue',2:'orange'}
+
+color={0:'red', 1:'blue', 2:'orange'}
 
 # image = plt.imread('images/n008-2018-08-01-16-03-27-0400__CAM_FRONT__1533153857912404.jpg')
 fig, ax = plt.subplots()
 # ax.imshow(image)
+print(data.files)
 
 plt.subplot(2, 1, 1)
 
@@ -45,7 +47,7 @@ plt.imshow(semantic_mask[2], cmap='gray')
 
 plt.tight_layout()
 
-plt.show()
+#plt.show()
 
 
 # fig, ax = plt.subplots()

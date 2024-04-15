@@ -40,12 +40,14 @@ class NuScenesMapDataset(Dataset):
                     img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
                     images.append(img)
                     ida_mats.append(ida_mat)
+
         extrinsic = np.stack([np.eye(4) for _ in range(sample["trans"].shape[0])], axis=0)
         extrinsic[:, :3, :3] = sample["rots"]
         extrinsic[:, :3, 3] = sample["trans"]
         intrinsic = sample['intrins']
         ctr_points = np.zeros((self.max_instances, max(self.max_pieces) * max(self.num_degree) + 1, 2), dtype=np.float)
         ins_labels = np.zeros((self.max_instances, 3), dtype=np.int16) - 1
+
         for ins_id, ctr_info in enumerate(sample['ctr_points']):
             cls_id = int(ctr_info['type'])
             ctr_pts_raw = np.array(ctr_info['pts'])
@@ -54,7 +56,9 @@ class NuScenesMapDataset(Dataset):
             assert num_points >= self.num_degree[cls_id] + 1
             ctr_points[ins_id][:num_points] = np.array(ctr_pts_raw[:num_points])
             ins_labels[ins_id] = [cls_id, (num_points - 1) // self.num_degree[cls_id] - 1, num_points]
+
         masks = sample[self.mask_key]
+
         if flip:
             new_order = [2, 1, 0, 5, 4, 3]
             img_key_list = [self.img_key_list[i] for i in new_order]
@@ -64,6 +68,7 @@ class NuScenesMapDataset(Dataset):
             intrinsic = [intrinsic[i] for i in new_order]
             masks = [np.flip(mask, axis=1) for mask in masks]
             ctr_points = self.point_flip(ctr_points, ins_labels, self.ego_size)
+
         item = dict(
             images=images, targets=dict(masks=masks, points=ctr_points, labels=ins_labels),
             extrinsic=np.stack(extrinsic), intrinsic=np.stack(intrinsic), ida_mats=np.stack(ida_mats),
