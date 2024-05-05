@@ -1,4 +1,6 @@
 import os
+import pdb
+
 import torch
 import numpy as np
 import torch.nn as nn
@@ -276,7 +278,6 @@ class Exp(BaseExp):
             drop_last=False,
             sampler=sampler,
         )
-
         self.val_dataset_size = len(val_set)
         return val_loader
 
@@ -315,7 +316,7 @@ class Exp(BaseExp):
             self.evaluation_save_dir = os.path.join(self.output_dir, "evaluation", "results")
             if not os.path.exists(self.evaluation_save_dir):
                 os.makedirs(self.evaluation_save_dir, exist_ok=True)
-        for (token, dt_res, dt_mask) in zip(tokens, results, dt_masks):
+        for (token, dt_res, dt_mask, image) in zip(tokens, results, dt_masks):
             save_path = os.path.join(self.evaluation_save_dir, f"{token}.npz")
             np.savez_compressed(save_path, dt_res=dt_res, dt_mask=dt_mask)
 

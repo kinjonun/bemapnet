@@ -1,3 +1,5 @@
+import pdb
+
 import torch.nn as nn
 import torch.nn.functional as F
 from bemapnet.models.ins_decoder.mask2former import MultiScaleMaskedTransformerDecoder
@@ -14,9 +16,11 @@ class Mask2formerINSDecoder(nn.Module):
     def forward(self, inputs):
         assert "bev_enc_features" in inputs
         bev_enc_features = inputs["bev_enc_features"]
+
         if self.tgt_shape is not None:
-            bev_enc_features = [self.up_sample(x) for x in inputs["bev_enc_features"]]
+            bev_enc_features = [self.up_sample(x) for x in inputs["bev_enc_features"]]   # [4, 1, 512, 200, 100]
         out = self.bev_decoder(bev_enc_features[-1:], bev_enc_features[-1])
+        # pdb.set_trace()
         return {"mask_features": [out["pred_masks"][1:][i] for i in self.decoder_ids],
                 "obj_scores": [out["pred_logits"][1:][i] for i in self.decoder_ids],
                 "decoder_outputs": [out["decoder_outputs"][1:][i] for i in self.decoder_ids],

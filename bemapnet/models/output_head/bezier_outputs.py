@@ -1,3 +1,5 @@
+import pdb
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -54,7 +56,7 @@ class PiecewiseBezierMapOutputHead(nn.Module):
         self.ex_ctr_heads = nn.ModuleList(FFN(in_channel, 256, (self.num_ctr_ex[i] * 2) * _C, 3) for i in range(_N))
         self.npiece_heads = nn.ModuleList(FFN(in_channel, 256, self.max_pieces[i], 3) for i in range(_N))
         self.gap_layer = nn.AdaptiveAvgPool2d((1, 1))
-        self.coords = self.compute_locations(device='cuda')
+        self.coords = self.compute_locations(device='cuda')     # [1, 2, 400, 200]
         self.coords_head = FFN(2, 256, _C, 3, 'conv')
 
     def forward(self, inputs):
@@ -64,40 +66,51 @@ class PiecewiseBezierMapOutputHead(nn.Module):
         im_ctr_coord = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
         ex_ctr_coord = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
         dt_end_logit = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
-        coords_feats = self.coords_head.forward(self.coords.repeat((inputs["mask_features"][0].shape[0], 1, 1, 1)))
+        # pdb.set_trace()
+        coords_feats = self.coords_head.forward(self.coords.repeat((inputs["mask_features"][0].shape[0], 1, 1, 1)))  # [1, 64, 400, 200]
+
         for i in range(num_decoders):
-            x_ins_cw = inputs["mask_features"][i].split(self.num_queries, dim=1)
-            x_obj_cw = inputs["obj_scores"][i].split(self.num_queries, dim=1)
-            x_qry_cw = inputs["decoder_outputs"][i].split(self.num_queries, dim=1)
+            x_ins_cw = inputs["mask_features"][i].split(self.num_queries, dim=1)    # ([1, 20, 200, 100], [1, 25, 200, 100], [1, 15, 200, 100] )
+            x_obj_cw = inputs["obj_scores"][i].split(self.num_queries, dim=1)       # ([1, 20, 2], [1, 25, 2], [1, 15, 2])
+            x_qry_cw = inputs["decoder_outputs"][i].split(self.num_queries, dim=1)  # ([1, 20, 512], ([1, 25, 512]), ([1, 15, 512]))
+            # pdb.set_trace()
             batch_size = x_qry_cw[0].shape[0]
+
             for j in range(self.num_classes):
                 num_qry = self.num_queries[j]
                 # if self.training:
                 dt_ins_masks[i][j] = self.up_sample(x_ins_cw[j])
                 dt_obj_logit[i][j] = x_obj_cw[j]              
-                dt_end_logit[i][j] = self.npiece_heads[j](x_qry_cw[j])
+                dt_end_logit[i][j] = self.npiece_heads[j](x_qry_cw[j])         # ([1, 20, 3],  )
+
                 # im
                 im_feats = self.im_ctr_heads[j](x_qry_cw[j])
                 im_feats = im_feats.reshape(batch_size, num_qry, self.num_ctr_im[j] * 2, -1).flatten(1, 2)
                 im_coords_map = torch.einsum("bqc,bchw->bqhw", im_feats, coords_feats)
                 im_coords = self.gap_layer(im_coords_map)
                 im_ctr_coord[i][j] = im_coords.reshape(batch_size, num_qry, self.max_pieces[j] + 1, 2)
+
                 # ex
                 if self.num_ctr_ex[j] == 0:
                     ex_ctr_coord[i][j] = torch.zeros(batch_size, num_qry, self.max_pieces[j], 0, 2).cuda()
                 else:
-                    ex_feats = self.ex_ctr_heads[j](x_qry_cw[j])
-                    ex_feats = ex_feats.reshape(batch_size, num_qry, self.num_ctr_ex[j] * 2, -1).flatten(1, 2)
-                    ex_coords_map = torch.einsum("bqc,bchw->bqhw", ex_feats, coords_feats)
-                    ex_coords = self.gap_layer(ex_coords_map)
-                    ex_ctr_coord[i][j] = ex_coords.reshape(batch_size, num_qry, self.max_pieces[j], self.num_degree[j] - 1, 2)
-        ret = {"outputs": {"obj_logits": dt_obj_logit, "ins_masks": dt_ins_masks,
-                           "ctr_im": im_ctr_coord, "ctr_ex": ex_ctr_coord, "end_logits": dt_end_logit}}
+                    ex_feats = self.ex_ctr_heads[j](x_qry_cw[j])    # [1, 20, 384]
+                    ex_feats = ex_feats.reshape(batch_size, num_qry, self.num_ctr_ex[j] * 2, -1).flatten(1, 2)   #  [1, 120, 64]
+                    ex_coords_map = torch.einsum("bqc,bchw->bqhw", ex_feats, coords_feats)    # [1, 120, 400, 200]
+                    ex_coords = self.gap_layer(ex_coords_map)             # [1, 120, 1, 1]
+                    ex_ctr_coord[i][j] = ex_coords.reshape(batch_size, num_qry, self.max_pieces[j], self.num_degree[j] - 1, 2)   # [1, 20, 3, 1, 2]
+
+
+        ret = {"outputs": { "obj_logits": dt_obj_logit,  "ins_masks": dt_ins_masks,
+                            "ctr_im": im_ctr_coord,      "ctr_ex": ex_ctr_coord,      "end_logits": dt_end_logit} }
+
+        # pdb.set_trace()
         if self.semantic_heads is not None:
             num_decoders = len(inputs["bev_enc_features"])
             dt_sem_masks = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
             for i in range(num_decoders):
-                x_sem = inputs["bev_enc_features"][i]
+                x_sem = inputs["bev_enc_features"][i]      # [1, 512, 200, 100]
+                # pdb.set_trace()
                 for j in range(self.num_classes):
                     dt_sem_masks[i][j] = self.up_sample(self.semantic_heads[j](x_sem))
             ret["outputs"].update({"sem_masks": dt_sem_masks})

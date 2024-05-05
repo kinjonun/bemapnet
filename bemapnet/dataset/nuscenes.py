@@ -1,4 +1,6 @@
 import os
+import pdb
+
 import torch
 import numpy as np
 from PIL import Image
@@ -45,6 +47,7 @@ class NuScenesMapDataset(Dataset):
         extrinsic[:, :3, :3] = sample["rots"]
         extrinsic[:, :3, 3] = sample["trans"]
         intrinsic = sample['intrins']
+        # image_paths = torch.tensor(sample['image_paths'].tolist())
         ctr_points = np.zeros((self.max_instances, max(self.max_pieces) * max(self.num_degree) + 1, 2), dtype=np.float)
         ins_labels = np.zeros((self.max_instances, 3), dtype=np.int16) - 1
 

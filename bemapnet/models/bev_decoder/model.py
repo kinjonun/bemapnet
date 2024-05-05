@@ -1,3 +1,5 @@
+import pdb
+
 import torch
 import numpy as np
 import torch.nn as nn
@@ -13,9 +15,10 @@ class TransformerBEVDecoder(nn.Module):
     def forward(self, inputs):
         assert self.key in inputs
         feats = inputs[self.key]
-        fuse_feats = feats[-1]
-        fuse_feats = fuse_feats.reshape(*inputs['images'].shape[:2], *fuse_feats.shape[-3:])
-        fuse_feats = torch.cat(torch.unbind(fuse_feats, dim=1), dim=-1)
+        fuse_feats = feats[-1]                                                                # [6, 600, 21, 49]
+        # pdb.set_trace()
+        fuse_feats = fuse_feats.reshape(*inputs['images'].shape[:2], *fuse_feats.shape[-3:])  # [1, 6, 600, 21, 49]
+        fuse_feats = torch.cat(torch.unbind(fuse_feats, dim=1), dim=-1)                       # [1, 600, 21, 294]
 
         cameras_info = {
             'extrinsic': inputs.get('extrinsic', None),
@@ -24,6 +27,6 @@ class TransformerBEVDecoder(nn.Module):
             'do_flip': inputs['extra_infos'].get('do_flip', None)
         }
 
-        _, _, bev_feats = self.bev_encoder(fuse_feats, cameras_info=cameras_info)
+        _, _, bev_feats = self.bev_encoder(fuse_feats, cameras_info=cameras_info)             # [4, 1, 512, 64, 32]
 
         return {"bev_enc_features": list(bev_feats)}

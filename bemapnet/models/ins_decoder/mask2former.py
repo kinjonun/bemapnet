@@ -1,5 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from: https://github.com/facebookresearch/detr/blob/master/models/detr.py
+import pdb
+
 import torch
 import logging
 from typing import Optional
@@ -237,22 +239,22 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         # disable mask, it does not affect performance
         del mask
-
-        for i in range(self.num_feature_levels):
-            size_list.append(x[i].shape[-2:])
-            mask = torch.zeros((x[i].size(0), x[i].size(2), x[i].size(3)), device=x[i].device, dtype=torch.bool)
-            pos.append(self.pe_layer(mask).flatten(2))
-            src.append(self.input_proj[i](x[i]).flatten(2) + self.level_embed.weight[i][None, :, None])
+        # pdb.set_trace()
+        for i in range(self.num_feature_levels):      # 1
+            size_list.append(x[i].shape[-2:])         # ([200, 100])]
+            mask = torch.zeros((x[i].size(0), x[i].size(2), x[i].size(3)), device=x[i].device, dtype=torch.bool)  # [1, 200, 100]
+            pos.append(self.pe_layer(mask).flatten(2))           # ([1, 512, 20000])
+            src.append(self.input_proj[i](x[i]).flatten(2) + self.level_embed.weight[i][None, :, None])  # ([1, 512, 20000])
 
             # flatten NxCxHxW to HWxNxC
-            pos[-1] = pos[-1].permute(2, 0, 1)
-            src[-1] = src[-1].permute(2, 0, 1)
+            pos[-1] = pos[-1].permute(2, 0, 1)    # ([20000, 1, 512])
+            src[-1] = src[-1].permute(2, 0, 1)    # ([20000, 1, 512])
 
         _, bs, _ = src[0].shape
 
         # QxNxC
-        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
-        output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
+        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)    # [60, 1, 512]
+        output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)          # [60, 1, 512]
 
         predictions_class = []
         predictions_mask = []
@@ -261,7 +263,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         # prediction heads on learnable query features
         dec_out, outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
             output, mask_features, attn_mask_target_size=size_list[0]
-        )
+        )      # dec_out([60, 512]), outputs_class([60, 2]), outputs_mask([60, 200, 100]),  attn_mask (8 ([60, 20000]) )
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
         decoder_outputs.append(dec_out)
@@ -275,14 +277,14 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
                 memory_mask=attn_mask,
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
                 pos=pos[level_index], query_pos=query_embed
-            )
+            )                                                           # [60, 1, 512]
             output = self.transformer_self_attention_layers[i](
                 output, tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed
             )
-            output = self.transformer_ffn_layers[i](output)
+            output = self.transformer_ffn_layers[i](output)             # [60, 1, 512]
             dec_out, outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
                 output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels]
-            )
+            )   # dec_out ([60, 512]), outputs_class([60, 2]), outputs_mask([60, 200, 100]), attn_mask(8 ([60, 20000]) )
 
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
@@ -302,7 +304,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         decoder_output = decoder_output.transpose(0, 1)   # (b, q, c')
         outputs_class = self.class_embed(decoder_output)  # (b, q, c') -> (b, q, 2)
         mask_embed = self.mask_embed(decoder_output)      # (b, q, c') -> (b, q, c)
-        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
+        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)   # descriptors z X Fb -> Mz
 
         # NOTE: prediction is of higher-resolution
         # [B, Q, H, W] -> [B, Q, H*W] -> [B, h, Q, H*W] -> [B*h, Q, HW]

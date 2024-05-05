@@ -58,6 +58,8 @@ class NuScenesSemanticDataset(NuScenesDataset):
         record = self.nusc.sample[idx]
         location = self.nusc.get('log', self.nusc.get('scene', record['scene_token'])['log_token'])['location']
         ego_pose = self.nusc.get('ego_pose', self.nusc.get('sample_data', record['data']['LIDAR_TOP'])['ego_pose_token'])
+        import pdb
+        # pdb.set_trace()
         vectors = self.vector_map.gen_vectorized_samples(location, ego_pose['translation'], ego_pose['rotation'])
         # import pdb
         # pdb.set_trace()

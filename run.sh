@@ -7,8 +7,8 @@ case "$1" in
         CONFIG_NAME=$2
         NUM_EPOCHS=$3
         GPUS=$4
-        SYNC_BN=$5
-        python3 configs/"${CONFIG_NAME}".py -d ${GPUS} -b 1 -e ${NUM_EPOCHS} --sync_bn ${SYNC_BN} --no-clearml
+        BATCH=$5
+        python3 configs/"${CONFIG_NAME}".py -d ${GPUS} -b ${BATCH} -e ${NUM_EPOCHS} --sync_bn 1 --no-clearml
         ;;
     "test")
         CONFIG_NAME=$2

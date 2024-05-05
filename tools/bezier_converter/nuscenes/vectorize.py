@@ -1,3 +1,5 @@
+import pdb
+
 import numpy as np
 from shapely import affinity, ops
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
@@ -214,7 +216,7 @@ class VectorizedLocalMap(object):
             # fixed number of points, so distance is line.length / self.fixed_num
             distances = np.linspace(0, line.length, self.fixed_num)
             sampled_points = np.array([list(line.interpolate(distance).coords) for distance in distances]).reshape(-1, 2)
-
+        # pdb.set_trace()
         if self.normalize:
             sampled_points = sampled_points / np.array([self.patch_size[1], self.patch_size[0]])
 

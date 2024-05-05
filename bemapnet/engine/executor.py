@@ -1,4 +1,6 @@
 import os
+import pdb
+
 import torch
 from tqdm import tqdm
 from typing import Sequence
@@ -127,10 +129,13 @@ class Trainer(BaseExecutor):
             sampler.set_epoch(epoch)
         for step in range(len(self.train_dataloader)):
             try:
-                data = next(self.train_iter)
+                data = next(self.train_iter)                        # data["images"]: [batch_size, 6, 3, 384, 896]
             except StopIteration:
                 self.train_iter = iter(self.train_dataloader)
                 data = next(self.train_iter)
+            # pdb.set_trace()
+            # data ['images', 'targets', 'extrinsic','intrinsic', 'ida_mats','extra_infos']
+            # data["targets"]: ['masks','points','labels']  masks[1, 3, 400, 200] points[1, 40, 22, 2], labels[1, 40, 3]
             self.train_step(data, step)
         if self.evaluator is not None:
             self.evaluator.eval()

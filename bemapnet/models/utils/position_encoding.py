@@ -2,6 +2,8 @@
 Various positional encodings for the transformer.
 """
 import math
+import pdb
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -101,19 +103,19 @@ class PositionEmbeddingIPM(nn.Module):
         y = torch.linspace(0, self.input_shape[0] - 1, self.current_shape[0], dtype=torch.float)
         y_grid, x_grid = torch.meshgrid(y, x)
         z = torch.ones(self.current_shape)
-        feat_coords = torch.stack([x_grid, y_grid, z], dim=-1).to(device)  # (H, W, 3)
+        feat_coords = torch.stack([x_grid, y_grid, z], dim=-1).to("cuda:0")  # (H, W, 3)
         feat_coords = feat_coords.unsqueeze(0).repeat(n, 1, 1, 1).unsqueeze(0).repeat(b, 1, 1, 1, 1).to("cuda:0")  # (B, N, H, W, 3)
 
         ida_mats = ida_mats.view(b, n, 1, 1, 3, 3).to("cuda:0")
         image_coords = ida_mats.inverse().matmul(feat_coords.unsqueeze(-1))  # (B, N, H, W, 3, 1)
 
-        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3)  # (B, N, 1, 1, 3, 3)
+        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3).to("cuda:0")  # (B, N, 1, 1, 3, 3)
         normed_coords = torch.linalg.inv(intrinsic) @ image_coords  # (B, N, H, W, 3, 1)
 
         ext_rots = extrinsic[:, :, :3, :3]  # (B, N, 3, 3)
-        ext_trans = extrinsic[:, :, :3, 3]  # (B, N, 3)
+        ext_trans = extrinsic[:, :, :3, 3].to("cuda:0")  # (B, N, 3)
 
-        ext_rots = ext_rots.view(b, n, 1, 1, 3, 3)  # (B, N, 1, 1, 3, 3)
+        ext_rots = ext_rots.view(b, n, 1, 1, 3, 3).to("cuda:0")  # (B, N, 1, 1, 3, 3)
         world_coords = (ext_rots @ normed_coords).squeeze(-1)  # (B, N, H, W, 3)
         world_coords = F.normalize(world_coords, p=2, dim=-1)
         z_coord = world_coords[:, :, :, :, 2]  # (B, N, H, W)
@@ -135,8 +137,9 @@ class PositionEmbeddingIPM(nn.Module):
         """
         device = extrinsic.device
         xy_pos_embed, valid = self.get_embedding(extrinsic, intrinsic, ida_mats)
-        if do_flip:
-            xy_pos_embed[:, :, :, :, 1] = -1 * xy_pos_embed[:, :, :, :, 1]
+        for i in range(len(do_flip)):
+            if do_flip[i]:
+                xy_pos_embed[i, :, :, :, 1] = -1 * xy_pos_embed[i, :, :, :, 1]
         # along with w
         xy_pos_embed = torch.cat(torch.unbind(xy_pos_embed, dim=1), dim=-2)  # (B, H, N*W, 2)
         valid = torch.cat(torch.unbind(valid, dim=1), dim=-2)  # (B, H, N*W, 2)
@@ -182,7 +185,7 @@ class PositionEmbeddingTgt(nn.Module):
 
     def forward(self, mask):
         B = mask.shape[0]
-
+        # pdb.set_trace()
         map_forward_ratio = self.tgt_shape[0] / self.map_size[0]
         map_lateral_ratio = self.tgt_shape[1] / self.map_size[1]
 

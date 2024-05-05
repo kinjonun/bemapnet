@@ -127,11 +127,13 @@
   ```shell
   bash run.sh train bemapnet_nuscenes_swint 30  # default: 8GPUs, bs=1, epochs=30
   ```
-
+  ```shell
+  bash run.sh train bemapnet_nuscenes_res50 2 0 1
+  ```
 - **b. Model Evaluation**
   ```shell
   bash run.sh test bemapnet_nuscenes_swint ${checkpoint-path}
-  bash run.sh test bemapnet_nuscenes_effb0 assets/weights/bemapnet_nuscenes_effb0_ep30_model.pth
+  bash run.sh test bemapnet_nuscenes_res50 outputs/bemapnet_nuscenes_res50/2024-05-03T10\:33\:35/dump_model/checkpoint_epoch_29.pth
   
   ```
 

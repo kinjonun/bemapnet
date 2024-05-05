@@ -1,3 +1,5 @@
+import pdb
+
 import cv2
 import torch
 import numpy as np
@@ -100,57 +102,64 @@ class SetCriterion(nn.Module):
         loss_masks, loss_ctr, loss_end, loss_curve, loss_rec = 0, 0, 0, 0, 0
         device = outputs["ins_masks"][0][0].device
         num_decoders, num_classes = len(matching_indices), len(matching_indices[0])
+        # matching_indices[0]:  [[(tensor([5, 6]), tensor([0, 1]))],
+        # [(tensor([], dtype=torch.int64), tensor([], dtype=torch.int64))],
+        # [(tensor([3, 4, 5]), tensor([0, 1, 2]))]]
+        # pdb.set_trace()
+
         for i in range(num_decoders):
             w = self.criterion_conf['ins_decoder']['weight'][i]
             for j in range(num_classes):
                 w2 = self.criterion_conf["class_weights"][j] if "class_weights" in self.criterion_conf else 1.0
-                num_instances = sum(len(t["obj_labels"][j]) for t in targets)
-                num_instances = torch.as_tensor([num_instances], dtype=torch.float, device=device)
+                num_instances = sum(len(t["obj_labels"][j]) for t in targets)    # len(targets)=1, 字典在列表里
+                # pdb.set_trace()
+                num_instances = torch.as_tensor([num_instances], dtype=torch.float, device=device)   # 2
                 if is_distributed() and is_available():
                     torch.distributed.all_reduce(num_instances)
                 num_instances = torch.clamp(num_instances / get_world_size(), min=1).item()
 
                 indices = matching_indices[i][j]
-                src_idx = self._get_src_permutation_idx(indices)  # dt
-                tgt_idx = self._get_tgt_permutation_idx(indices)  # gt
+                src_idx = self._get_src_permutation_idx(indices)  # dt   (tensor([0, 0]), tensor([5, 6]))
+                tgt_idx = self._get_tgt_permutation_idx(indices)  # gt   (tensor([0, 0]), tensor([0, 1]))
+                # (tensor([0, 0]), tensor([0, 1]))第一个储存batch索引， 第二个gt的索引
 
                 # instance masks
-                src_masks = outputs["ins_masks"][i][j][src_idx]
-                tgt_masks = [t["ins_masks"][j] for t in targets]
-                tgt_masks, _ = nested_tensor_from_tensor_list(tgt_masks).decompose()
-                tgt_masks = tgt_masks.to(src_masks)[tgt_idx]
+                src_masks = outputs["ins_masks"][i][j][src_idx]           # [2, 400, 200]
+                tgt_masks = [t["ins_masks"][j] for t in targets]          # list([2, 400, 200])
+                tgt_masks, _ = nested_tensor_from_tensor_list(tgt_masks).decompose()     # [1, 2, 400, 200]
+                tgt_masks = tgt_masks.to(src_masks)[tgt_idx]                             # [2, 400, 200]
                 loss_masks += w * self.matcher.ins_mask_loss(src_masks, tgt_masks, "loss").sum() / num_instances * w2
 
                 # eof indices classification
-                src_logits = outputs["end_logits"][i][j][src_idx]  # [M, K]
+                src_logits = outputs["end_logits"][i][j][src_idx]  # [M, K]    [2, 3]  [num_ins, num_max_piece]
                 tgt_labels = torch.cat([t["end_labels"][j][J] for t, (_, J) in zip(targets, indices)])  # (M, )
                 loss_end += w * F.cross_entropy(src_logits, tgt_labels, ignore_index=-1, reduction='sum') / num_instances * w2
 
                 # control points
-                src_ctrs = outputs["ctr_points"][i][j][src_idx]  # [bs, num_queries, o, 2]
-                end_labels = torch.max(src_logits.softmax(dim=-1), dim=-1)[1]  # [m, k]  0, 1, 2, 3...
-                end_labels_new = (end_labels + 1) * self.num_degree[j] + 1
-                valid_mask = torch.zeros(src_ctrs.shape[:2], device=device).long()
+                src_ctrs = outputs["ctr_points"][i][j][src_idx]                       # [2, 7, 2]
+                end_labels = torch.max(src_logits.softmax(dim=-1), dim=-1)[1]         # [m, k]  0, 1, 2, 3...     [2]
+                end_labels_new = (end_labels + 1) * self.num_degree[j] + 1            # (2+1) * 2 + 1 =7
+                valid_mask = torch.zeros(src_ctrs.shape[:2], device=device).long()    # [2, 7]
                 for a, b in enumerate(end_labels_new):
                     valid_mask[a][:b] = 1
-                src_ctrs_masked = (src_ctrs * valid_mask.unsqueeze(-1))
-                tgt_ctrs = torch.zeros((len(tgt_idx[0]), *src_ctrs.shape[-2:]), device=device).float()
-                valid_mask = torch.zeros((len(tgt_idx[0]), src_ctrs.shape[-2]), device=device).float()
-                for idx in range(len(tgt_idx[0])):
+                src_ctrs_masked = (src_ctrs * valid_mask.unsqueeze(-1))               # [2, 7, 2]
+                tgt_ctrs = torch.zeros((len(tgt_idx[0]), *src_ctrs.shape[-2:]), device=device).float()   # [2, 7, 2]
+                valid_mask = torch.zeros((len(tgt_idx[0]), src_ctrs.shape[-2]), device=device).float()   # [2, 7]
+                for idx in range(len(tgt_idx[0])):    # 2
                     batch_id, gt_id = tgt_idx[0][idx], tgt_idx[1][idx]
-                    tgt_ctrs[idx] = targets[batch_id]['ctr_points'][j][gt_id]
-                    valid_mask[idx] = targets[batch_id]['valid_masks'][j][gt_id]
-                tgt_ctrs_masked = (tgt_ctrs * valid_mask.unsqueeze(-1))
-                num_pt = src_ctrs.shape[-2] * src_ctrs.shape[-1]
+                    tgt_ctrs[idx] = targets[batch_id]['ctr_points'][j][gt_id]         # [7, 2]
+                    valid_mask[idx] = targets[batch_id]['valid_masks'][j][gt_id]      # [7]
+                tgt_ctrs_masked = (tgt_ctrs * valid_mask.unsqueeze(-1))               # [2, 7, 2]
+                num_pt = src_ctrs.shape[-2] * src_ctrs.shape[-1]                      # 14
                 loss_ctr += w * F.l1_loss(src_ctrs_masked, tgt_ctrs_masked, reduction='sum') / num_instances / num_pt * w2
 
                 # curve loss
-                src_curves = outputs["curve_points"][i][j][src_idx]
-                tgt_curves = torch.zeros((len(tgt_idx[0]), *src_curves.shape[-2:]), device=device).float()
+                src_curves = outputs["curve_points"][i][j][src_idx]                   # [2, 100, 2]
+                tgt_curves = torch.zeros((len(tgt_idx[0]), *src_curves.shape[-2:]), device=device).float()  # [2, 100,2]
                 for idx in range(len(tgt_idx[0])):
                     batch_id, gt_id = tgt_idx[0][idx], tgt_idx[1][idx]
                     tgt_curves[idx] = targets[batch_id]['curve_points'][j][gt_id]
-                num_pt = src_curves.shape[-2] * src_curves.shape[-1]
+                num_pt = src_curves.shape[-2] * src_curves.shape[-1]                  # 100 * 2
                 loss_curve += w * F.l1_loss(src_curves, tgt_curves, reduction='sum') / num_instances / num_pt * w2
 
                 # recovery loss
@@ -162,8 +171,8 @@ class SetCriterion(nn.Module):
         loss_end /= (num_decoders * num_classes)
         loss_rec /= (num_decoders * num_classes)
 
-        return {"ctr_loss": loss_ctr, "end_loss": loss_end, "msk_loss": loss_masks, "curve_loss": loss_curve,
-                "recovery_loss": loss_rec}
+        return {"ctr_loss": loss_ctr,   "end_loss": loss_end,  "msk_loss": loss_masks,   "curve_loss": loss_curve,
+                "recovery_loss": loss_rec }
 
     def criterion_instance_labels(self, outputs, targets, matching_indices):
         loss_labels = 0
@@ -231,6 +240,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
 
     def forward(self, outputs, targets=None):
         outputs.update(self.bezier_curve_outputs(outputs))
+        # pdb.set_trace()
         if self.training:
             targets = self.refactor_targets(targets)
             return self.criterion.forward(outputs, targets)
@@ -239,59 +249,62 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
 
     def bezier_curve_outputs(self, outputs):
         dt_ctr_im, dt_ctr_ex, dt_ends = outputs["ctr_im"], outputs["ctr_ex"], outputs["end_logits"]
-        num_decoders, num_classes = len(dt_ends), len(dt_ends[0])
+        num_decoders, num_classes = len(dt_ends), len(dt_ends[0])                                  # 6, 3
         ctr_points = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
         curve_points = [[[] for _ in range(self.num_classes)] for _ in range(num_decoders)]
         for i in range(num_decoders):
             for j in range(num_classes):
                 batch_size, num_queries = dt_ctr_im[i][j].shape[:2]
 
-                im_coords = dt_ctr_im[i][j].sigmoid()
-                ex_offsets = dt_ctr_ex[i][j].sigmoid() - 0.5
-                im_center_coords = ((im_coords[:, :, :-1] + im_coords[:, :, 1:]) / 2).unsqueeze(-2)
+                im_coords = dt_ctr_im[i][j].sigmoid()                                                 # [1, 20, 4, 2]
+                ex_offsets = dt_ctr_ex[i][j].sigmoid() - 0.5                                          # [1, 20, 3, 1, 2]
+                im_center_coords = ((im_coords[:, :, :-1] + im_coords[:, :, 1:]) / 2).unsqueeze(-2)   # [1, 20, 3, 1, 2]
+                # pdb.set_trace()
                 ex_coords = torch.stack([im_center_coords[:, :, :, :, 0] + ex_offsets[:, :, :, :, 0],
-                                         im_center_coords[:, :, :, :, 1] + ex_offsets[:, :, :, :, 1]], dim=-1)
-                im_coords = im_coords.unsqueeze(-2)
-                ctr_coords = torch.cat([im_coords[:, :, :-1], ex_coords], dim=-2).flatten(2, 3)
-                ctr_coords = torch.cat([ctr_coords, im_coords[:, :, -1:, 0, :]], dim=-2)
+                                         im_center_coords[:, :, :, :, 1] + ex_offsets[:, :, :, :, 1]], dim=-1)  # [1, 20, 3, 1, 2]
+                im_coords = im_coords.unsqueeze(-2)             # [1, 20, 4, 1, 2]
+                ctr_coords = torch.cat([im_coords[:, :, :-1], ex_coords], dim=-2).flatten(2, 3)  # [1, 20, 6, 2]
+                ctr_coords = torch.cat([ctr_coords, im_coords[:, :, -1:, 0, :]], dim=-2)     # [1, 20, 7, 2]
                 ctr_points[i][j] = ctr_coords.clone()
 
                 end_inds = torch.max(torch.softmax(dt_ends[i][j].flatten(0, 1), dim=-1), dim=-1)[1]
-                curve_pts = self.curve_recovery_with_bezier(ctr_coords.flatten(0, 1), end_inds, j)
-                curve_points[i][j] = curve_pts.reshape(batch_size, num_queries, *curve_pts.shape[-2:])
+                curve_pts = self.curve_recovery_with_bezier(ctr_coords.flatten(0, 1), end_inds, j)  # [20, 100, 2]
+                curve_points[i][j] = curve_pts.reshape(batch_size, num_queries, *curve_pts.shape[-2:])     # [1, 20, 100, 2]
 
         return {"curve_points": curve_points, 'ctr_points': ctr_points}
 
     def refactor_targets(self, targets):
         targets_refactored = []
-        batch_size, num_classes = len(targets["masks"]), len(targets["masks"][0])
+        batch_size, num_classes = len(targets["masks"]), len(targets["masks"][0])     # 1, 3
         targets["masks"] = targets["masks"].cuda()
         targets["points"] = targets["points"].cuda()
         targets["labels"] = targets["labels"].cuda()
+        # pdb.set_trace()
         for batch_id in range(batch_size):
 
             sem_masks, ins_masks, ins_objects = [], [], []
             ctr_points, curve_points, end_labels, valid_masks = [], [], [], []
 
-            ins_classes = targets['labels'][batch_id][:, 0].int()
+            ins_classes = targets['labels'][batch_id][:, 0].int()    # targets['labels']: [1, 40, 3]
             cls_ids, ins_ids = torch.where((ins_classes.unsqueeze(0) == self.class_indices.unsqueeze(1)).int())
             for cid in range(num_classes):
                 indices = ins_ids[torch.where(cls_ids == cid)]
                 num_ins = indices.shape[0]
 
+                # pdb.set_trace()
                 # object class: 0 or 1
                 ins_obj = torch.zeros((num_ins,), dtype=torch.long).cuda()
                 ins_objects.append(ins_obj)
 
                 # bezier control points coords
                 num_max = self.num_points[cid]
-                ctr_pts = targets['points'][batch_id][indices][:, :num_max].float()
-                ctr_pts[:, :, 0] = ctr_pts[:, :, 0] / self.ego_size[1]
+                ctr_pts = targets['points'][batch_id][indices][:, :num_max].float()  # targets['points']: [1, 40, 22, 2]
+                ctr_pts[:, :, 0] = ctr_pts[:, :, 0] / self.ego_size[1]               # [ins, max_point, 2]
                 ctr_pts[:, :, 1] = ctr_pts[:, :, 1] / self.ego_size[0]
                 ctr_points.append(ctr_pts)
 
                 # piecewise end indices
-                end_indices = targets['labels'][batch_id][indices][:, 1].long()
+                end_indices = targets['labels'][batch_id][indices][:, 1].long()      # targets['labels']: [1, 40, 3]
                 end_labels.append(end_indices)
 
                 # bezier valid masks
@@ -306,10 +319,10 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 curve_points.append(curve_pts)
 
                 # instance mask
-                mask_pc = targets["masks"][batch_id][cid]  # mask supervision
+                mask_pc = targets["masks"][batch_id][cid]  # mask supervision  targets["masks"]: [1, 3, 400, 200], mask_pc[400, 200]
                 unique_ids = torch.unique(mask_pc, sorted=True)[1:]
                 if num_ins == unique_ids.shape[0]:
-                    ins_msk = (mask_pc.unsqueeze(0).repeat(num_ins, 1, 1) == unique_ids.view(-1, 1, 1)).float()
+                    ins_msk = (mask_pc.unsqueeze(0).repeat(num_ins, 1, 1) == unique_ids.view(-1, 1, 1)).float()  # [num_ins, 400, 200]
                 else:
                     ins_msk = np.zeros((num_ins, *self.map_size), dtype=np.uint8)
                     for i, ins_pts in enumerate(curve_pts):
@@ -335,17 +348,22 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
     def curve_recovery_with_bezier(self, ctr_points, end_indices, cid):
         device = ctr_points.device
         curve_pts_ret = torch.zeros((0, self.curve_size, 2), dtype=torch.float, device=device)
+        # pdb.set_trace()
         num_instances, num_pieces = ctr_points.shape[0], ctr_points.shape[1]
         pieces_ids = [[i+j for j in range(self.num_degree[cid]+1)] for i in range(0, num_pieces - 1, self.num_degree[cid])]
+        # [[0, 1, 2], [2, 3, 4], [4, 5, 6]]
         pieces_ids = torch.tensor(pieces_ids).long().to(device)
+
         points_ids = torch.tensor(list(range(self.curve_size))).long().to(device)
-        points_ids = (end_indices + 1).unsqueeze(1) * points_ids.unsqueeze(0)
+        points_ids = (end_indices + 1).unsqueeze(1) * points_ids.unsqueeze(0)             # [20, 100]
+
         if num_instances > 0:
-            ctr_points_flatten = ctr_points[:, pieces_ids, :].flatten(0, 1)
-            curve_pts = torch.matmul(self.bezier_coefficient[cid], ctr_points_flatten)
-            curve_pts = curve_pts.reshape(num_instances, pieces_ids.shape[0], *curve_pts.shape[-2:])
-            curve_pts = curve_pts.flatten(1, 2)
-            curve_pts_ret = torch.stack([curve_pts[i][points_ids[i]] for i in range(points_ids.shape[0])])
+            ctr_points_flatten = ctr_points[:, pieces_ids, :].flatten(0, 1)               # [20, 3, 3, 2] -> [60, 3, 2]
+            curve_pts = torch.matmul(self.bezier_coefficient[cid], ctr_points_flatten)    # [60, 100, 2]
+            # pdb.set_trace()
+            curve_pts = curve_pts.reshape(num_instances, pieces_ids.shape[0], *curve_pts.shape[-2:])   # [20, 3, 100, 2]
+            curve_pts = curve_pts.flatten(1, 2)                                                               # [20, 300, 2]
+            curve_pts_ret = torch.stack([curve_pts[i][points_ids[i]] for i in range(points_ids.shape[0])])    # [20, 100, 2]
         return curve_pts_ret
 
     def _get_bezier_coefficients(self):
@@ -378,7 +396,8 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 for dt_curve, dt_score in zip(curve_pts, pred_scores[keep_ids]):
                     cv2.polylines(masks[j], [dt_curve.astype(np.int32)], False, color=instance_index,
                                   thickness=self.save_thickness)
-                    cv2.polylines(masks5[j], [dt_curve.astype(np.int32)], False, color=instance_index, thickness=12)
+                    cv2.polylines(masks5[j], [dt_curve.astype(np.int32)], False, color=instance_index,
+                                  thickness=12)
                     instance_index += 1
                     points.append(curve_pts)
                     scores.append(self._to_np(dt_score).item())

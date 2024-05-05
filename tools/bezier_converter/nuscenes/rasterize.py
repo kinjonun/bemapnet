@@ -80,6 +80,7 @@ class RasterizedLocalMap(object):
                     map_masks, idx = self.mask_for_lines(new_line, map_masks, self.thickness, idx, trans_type)
                     pts = self.canvas_size - np.array(new_line.coords[:])[:, ::-1]
                     map_points.append(pts.tolist())
+
         map_masks_ret = []
         for i in range(len(self.thickness)):
             map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
