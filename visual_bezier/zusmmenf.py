@@ -83,6 +83,7 @@ def save_surroud(token):
     sample = nusc.get('sample', token)
     row_1_list = []
     row_2_list = []
+    image_name_list = []
     for cam in img_key_list[:3]:
         img = nusc.get('sample_data', sample['data'][cam])
         filename = img['filename']
@@ -90,6 +91,7 @@ def save_surroud(token):
         img_path = os.path.join(dataroot, filename)
         img = cv2.imread(img_path)
         row_1_list.append(img)
+        image_name_list.append(filename)
 
     for cam in img_key_list[3:]:
         img = nusc.get('sample_data', sample['data'][cam])
@@ -97,12 +99,18 @@ def save_surroud(token):
         img_path = os.path.join(dataroot, filename)
         img = cv2.imread(img_path)
         row_2_list.append(img)
+        image_name_list.append(filename)
 
     row_1_img = cv2.hconcat(row_1_list)       # 水平拼接成一张图像
     row_2_img = cv2.hconcat(row_2_list)
     cams_img = cv2.vconcat([row_1_img, row_2_img])
     cams_img_path = osp.join(sample_path, 'surroud_view.jpg')
     cv2.imwrite(cams_img_path, cams_img, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+    img_name_path = osp.join(sample_path, 'images_name_list.txt')
+    with open(img_name_path, "w") as f:
+        for item in image_name_list:
+            f.write("%s\n" % item)
 
 def concat():
     gt_path = osp.join(sample_path, 'GT.png')
@@ -135,9 +143,9 @@ for file in file_list:
     if not os.path.exists(sample_path):
         os.makedirs(sample_path, exist_ok=True)
 
-    # save_pred_visual(file)
-    # save_GT_visual(file)
-    # save_surroud(token)
+    save_pred_visual(file)
+    save_GT_visual(file)
+    save_surroud(token)
     concat()
 
 
