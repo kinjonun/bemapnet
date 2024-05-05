@@ -275,7 +275,7 @@ def main():
         batch['extrinsic'] = torch.tensor(batch['extrinsic']).cuda()
         batch['intrinsic'] = torch.tensor(batch['intrinsic']).cuda()
         batch['ida_mats'] = torch.tensor(batch['ida_mats']).cuda()
-        pdb.set_trace()
+        # pdb.set_trace()
         with torch.no_grad():
             batch["images"] = batch["images"].float().cuda()
             outputs = model(batch)

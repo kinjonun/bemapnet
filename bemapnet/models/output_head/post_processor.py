@@ -380,11 +380,13 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
     def post_processing(self, outputs):
         batch_results, batch_masks, batch_masks5 = [], [], []
         batch_size = outputs["obj_logits"][-1][0].shape[0]
+
         for i in range(batch_size):
             points, scores, labels = [None], [-1], [0]
             masks = np.zeros((self.num_classes, *self.map_size)).astype(np.uint8)
             masks5 = np.zeros((self.num_classes, *self.map_size)).astype(np.uint8)
             instance_index = 1
+
             for j in range(self.num_classes):
                 pred_scores, pred_labels = torch.max(F.softmax(outputs["obj_logits"][-1][j][i], dim=-1), dim=-1)
                 keep_ids = torch.where((pred_labels == 0).int())[0]
@@ -393,13 +395,13 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 curve_pts = outputs['curve_points'][-1][j][i][keep_ids].cpu().data.numpy()
                 curve_pts[:, :, 0] *= self.map_size[1]
                 curve_pts[:, :, 1] *= self.map_size[0]
-                for dt_curve, dt_score in zip(curve_pts, pred_scores[keep_ids]):
+                for dt_curve, dt_score in zip(curve_pts, pred_scores[keep_ids]):   # 遍历检测出的 n 个instance
                     cv2.polylines(masks[j], [dt_curve.astype(np.int32)], False, color=instance_index,
                                   thickness=self.save_thickness)
                     cv2.polylines(masks5[j], [dt_curve.astype(np.int32)], False, color=instance_index,
                                   thickness=12)
                     instance_index += 1
-                    points.append(curve_pts)
+                    points.append(dt_curve)
                     scores.append(self._to_np(dt_score).item())
                     labels.append(j + 1)
             batch_results.append({'map': points, 'confidence_level': scores, 'pred_label': labels})

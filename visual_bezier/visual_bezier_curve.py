@@ -1,9 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from PIL import Image
+import os.path as osp
 
+sample_dir = "/home/sun/Bev/BeMapNet/visual_bezier"
 # data = np.load('1b9a789e08bb4b7b89eacb2176c70840.npz', allow_pickle=True)
-data = np.load('/home/sun/Bev/BeMapNet/data/nuscenes/customer/bemapnet/02651ca22b08484294d473d9c26cd9af.npz', allow_pickle=True)
+data = np.load('/home/sun/Bev/BeMapNet/data/nuscenes/customer/bemapnet/0f77ffe576ac436a87787eb343dc3f27.npz', allow_pickle=True)
 
 
 map_vectors = data['map_vectors']
@@ -17,43 +20,51 @@ instance_mask8 = data['instance_mask8']
 ego_vectors = data['ego_vectors']
 ctr_points = data['ctr_points']
 
-color = {0: 'orange', 1: 'blue', 2: 'r'}
+color = {0: 'orange', 1: 'blue', 2: 'green'}
+pc_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
+car_img = Image.open('/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png')
 
 # image = plt.imread('images/n008-2018-08-01-16-03-27-0400__CAM_FRONT__1533153857912404.jpg')
-fig, ax = plt.subplots()
+# fig, ax = plt.subplots()
 # ax.imshow(image)
 
 tensor_tran = torch.tensor(trans).cuda()
 # print(image_paths.shape)
 
-plt.subplot(2, 1, 1)
+plt.figure(figsize=(3, 6))
+# plt.subplot(2, 1, 1)
+# plt.figure(figsize=(2, 4))
+plt.ylim(pc_range[1], pc_range[4])  # -30, 30
+plt.xlim(pc_range[0], pc_range[3])  # -15, 15
+# plt.axis('off')
 
 for item in data['ctr_points']:
     pts = item['pts']
-    y = [-pt[0]+15 for pt in pts]
+    y = [pt[0]-15 for pt in pts]
     x = [-pt[1]+30 for pt in pts]
-    plt.scatter(x, y, c = color[item['type']])
+    plt.scatter(y, x, c = color[item['type']])
 
 for item in data['ego_vectors']:
     pts = item['pts']
     for i in range(len(pts)-1):
-        plt.plot([pts[i][0], pts[i + 1][0]], [pts[i][1], pts[i + 1][1]], c=color[item['type']])
+        plt.plot([-pts[i][1], -pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type']])
 
-plt.subplot(2, 3, 4)
-plt.title('divider semantic')
-plt.xlabel('Y')
-plt.ylabel('X')
-plt.imshow(semantic_mask[0], cmap='gray')
-plt.subplot(2, 3, 5)
-plt.imshow(semantic_mask[1], cmap='gray')
-plt.subplot(2, 3, 6)
-plt.imshow(semantic_mask[2], cmap='gray')
+plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
+plt.text(-15, 31, 'GT', color='red', fontsize=12)
+# plt.subplot(2, 3, 4)
+# plt.title('divider semantic')
+# plt.xlabel('Y')
+# plt.ylabel('X')
+# plt.imshow(semantic_mask[0], cmap='gray')
+# plt.subplot(2, 3, 5)
+# plt.imshow(semantic_mask[1], cmap='gray')
+# plt.subplot(2, 3, 6)
+# plt.imshow(semantic_mask[2], cmap='gray')
 
 
 plt.tight_layout()
 
+map_path = osp.join(sample_dir, 'GT.png')
+plt.savefig(map_path, bbox_inches='tight', format='png', dpi=1200)
 plt.show()
 
-
-# fig, ax = plt.subplots()
-# ax.imshow(image)

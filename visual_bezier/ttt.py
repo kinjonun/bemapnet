@@ -2,8 +2,10 @@ import numpy as np
 import torch
 from nuscenes import NuScenes
 import os
+import os.path as osp
 import matplotlib.pyplot as plt
 from PIL import Image
+import cv2
 
 a =np.array(['samples/CAM_FRONT_LEFT/n015-2018-08-02-17-16-37+0800__CAM_FRONT_LEFT__1533201481004844.jpg',
  'samples/CAM_FRONT/n015-2018-08-02-17-16-37+0800__CAM_FRONT__1533201481012460.jpg',
@@ -50,15 +52,39 @@ aa_list =a.tolist()
 
 img_key_list = ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT"]
 dataroot = "/media/sun/z/nuscenes/nuscenes"
-token = "3be45164a35e465cbfbc3c20ef060718"
+sample_dir = "/home/sun/Bev/BeMapNet/visual_bezier"
+
+# token = "3be45164a35e465cbfbc3c20ef060718"
+token = "0f77ffe576ac436a87787eb343dc3f27"
 nusc = NuScenes(version='v1.0-trainval', dataroot=dataroot, verbose=True)
 sample = nusc.get('sample', token)
-img = nusc.get('sample_data', sample['data'][img_key_list[0]])
-filename = img['filename']
-img_path = os.path.join(dataroot, filename)
+
+row_1_list = []
+row_2_list = []
+for cam in img_key_list[:3]:
+    img = nusc.get('sample_data', sample['data'][cam])
+    filename = img['filename']
+    print(filename)
+    img_path = os.path.join(dataroot, filename)
+    img = cv2.imread(img_path)
+    row_1_list.append(img)
+
+for cam in img_key_list[3:]:
+    img = nusc.get('sample_data', sample['data'][cam])
+    filename = img['filename']
+    img_path = os.path.join(dataroot, filename)
+    img = cv2.imread(img_path)
+    row_2_list.append(img)
+
+row_1_img = cv2.hconcat(row_1_list)  # 水平拼接成一张图像
+row_2_img = cv2.hconcat(row_2_list)
+cams_img = cv2.vconcat([row_1_img, row_2_img])
+cams_img_path = osp.join(sample_dir, 'surroud_view.jpg')
+cv2.imwrite(cams_img_path, cams_img, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
 # for cam in img_key_list:
 #  img =
 # print(img_path)
-image = Image.open(img_path)
+#     image = Image.open(img_path)
 
-image.show()
+# image.show()
