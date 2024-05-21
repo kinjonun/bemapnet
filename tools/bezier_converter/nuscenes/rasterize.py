@@ -24,17 +24,17 @@ class RasterizedLocalMap(object):
         }
 
     def convert_vec_to_mask(self, vectors):
+        # pdb.set_trace()
         vector_num_list = {cls_idx: [] for cls_idx in range(self.max_channel)}  # map-type -> list
         for vector in vectors:
             if vector['pts_num'] >= 2:
                 vector_num_list[vector['type']].append(LineString(vector['pts'][:vector['pts_num']]))
-        ins_idx = 1      # instance-index
-        instance_masks = np.zeros(
-            (len(self.thickness), self.max_channel, self.canvas_size[1], self.canvas_size[0]), np.uint8)
-        # import pdb
-        # pdb.set_trace()
-        instance_vec_points, instance_ctr_points = [], []
 
+        ins_idx = 1      # instance-index
+        instance_masks = np.zeros((len(self.thickness), self.max_channel, self.canvas_size[1], self.canvas_size[0]), np.uint8)
+        # pdb.set_trace()
+
+        instance_vec_points, instance_ctr_points = [], []
         for cls_idx in range(self.max_channel):
             pbc_func = self.pbc_funcs[self.num_degrees[cls_idx]]
             masks, map_points, ctr_points, ins_idx = self.line_geom_to_mask(vector_num_list[cls_idx], ins_idx, pbc_func)
@@ -43,6 +43,7 @@ class RasterizedLocalMap(object):
                 instance_vec_points.append({'pts': pts, 'pts_num': len(pts), 'type': cls_idx})
             for pts in ctr_points:
                 instance_ctr_points.append({'pts': pts, 'pts_num': len(pts), 'type': cls_idx})
+
         instance_masks = np.stack(instance_masks).astype(np.uint8)
         semantic_masks = (instance_masks != 0).astype(np.uint8)
         return semantic_masks, instance_masks, instance_vec_points, instance_ctr_points
@@ -57,7 +58,6 @@ class RasterizedLocalMap(object):
         trans_y = -patch_y + patch_h / 2.0
         map_masks = np.zeros((len(self.thickness), *self.canvas_size), np.uint8)
         map_points, ctr_points = [], []
-        # import pdb
         # pdb.set_trace()
 
         for line in layer_geom:
@@ -95,7 +95,7 @@ class RasterizedLocalMap(object):
         if len(coords) < 2:
             return mask, idx
         for i, t in enumerate(thickness):
-            # pdb.set_trace()
+            pdb.set_trace()
             if trans_type == 'index':
                 cv2.polylines(mask[i], [coords], False, color=idx, thickness=t)
                 idx += 1

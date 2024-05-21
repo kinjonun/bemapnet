@@ -1,5 +1,4 @@
 import pdb
-
 import cv2
 import torch
 import numpy as np
@@ -111,7 +110,7 @@ class SetCriterion(nn.Module):
             w = self.criterion_conf['ins_decoder']['weight'][i]
             for j in range(num_classes):
                 w2 = self.criterion_conf["class_weights"][j] if "class_weights" in self.criterion_conf else 1.0
-                num_instances = sum(len(t["obj_labels"][j]) for t in targets)    # len(targets)=1, 字典在列表里
+                num_instances = sum(len(t["obj_labels"][j]) for t in targets)         # len(targets)=1, 字典在列表里
                 # pdb.set_trace()
                 num_instances = torch.as_tensor([num_instances], dtype=torch.float, device=device)   # 2
                 if is_distributed() and is_available():
@@ -119,8 +118,8 @@ class SetCriterion(nn.Module):
                 num_instances = torch.clamp(num_instances / get_world_size(), min=1).item()
 
                 indices = matching_indices[i][j]
-                src_idx = self._get_src_permutation_idx(indices)  # dt   (tensor([0, 0]), tensor([5, 6]))
-                tgt_idx = self._get_tgt_permutation_idx(indices)  # gt   (tensor([0, 0]), tensor([0, 1]))
+                src_idx = self._get_src_permutation_idx(indices)  # dt         (tensor([0, 0]), tensor([5, 6]))
+                tgt_idx = self._get_tgt_permutation_idx(indices)  # gt         (tensor([0, 0]), tensor([0, 1]))
                 # (tensor([0, 0]), tensor([0, 1]))第一个储存batch索引， 第二个gt的索引
 
                 # instance masks
@@ -299,8 +298,8 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 # bezier control points coords
                 num_max = self.num_points[cid]
                 ctr_pts = targets['points'][batch_id][indices][:, :num_max].float()  # targets['points']: [1, 40, 22, 2]
-                ctr_pts[:, :, 0] = ctr_pts[:, :, 0] / self.ego_size[1]               # [ins, max_point, 2]
-                ctr_pts[:, :, 1] = ctr_pts[:, :, 1] / self.ego_size[0]
+                ctr_pts[:, :, 0] = ctr_pts[:, :, 0] / self.ego_size[1]               # 30  [ins, max_point, 2]
+                ctr_pts[:, :, 1] = ctr_pts[:, :, 1] / self.ego_size[0]               # 60
                 ctr_points.append(ctr_pts)
 
                 # piecewise end indices
@@ -310,7 +309,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 # bezier valid masks
                 v_mask = torch.zeros((num_ins, num_max), dtype=torch.int8).cuda()
                 for ins_id in range(num_ins):
-                    k = targets['labels'][batch_id][indices[ins_id]][2].long()
+                    k = targets['labels'][batch_id][indices[ins_id]][2].long()       # 每个ins总点数
                     v_mask[ins_id][:k] = 1
                 valid_masks.append(v_mask)
 
@@ -319,8 +318,9 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 curve_points.append(curve_pts)
 
                 # instance mask
-                mask_pc = targets["masks"][batch_id][cid]  # mask supervision  targets["masks"]: [1, 3, 400, 200], mask_pc[400, 200]
-                unique_ids = torch.unique(mask_pc, sorted=True)[1:]
+                mask_pc = targets["masks"][batch_id][cid]  # mask supervision  [1, 3, 400, 200],  mask_pc[400, 200]
+                unique_ids = torch.unique(mask_pc, sorted=True)[1:]   # 提取唯一值， 1维. 剔除0， 0代表没有instance
+                pdb.set_trace()
                 if num_ins == unique_ids.shape[0]:
                     ins_msk = (mask_pc.unsqueeze(0).repeat(num_ins, 1, 1) == unique_ids.view(-1, 1, 1)).float()  # [num_ins, 400, 200]
                 else:

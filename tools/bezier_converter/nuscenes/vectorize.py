@@ -1,5 +1,4 @@
 import pdb
-
 import numpy as np
 from shapely import affinity, ops
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
@@ -57,10 +56,7 @@ class VectorizedLocalMap(object):
         # line_geom:  [('road_divider', [<shapely.geometry.linestring.LineString >, <shapely.geometry.linestring.LineString>]),
         # ('lane_divider', [<shapely.geometry.linestring.LineString >, <shapely.geometry.linestring.LineString ])]
         line_geom = self.get_map_geom(patch_box, patch_angle, self.line_classes, location)
-        # import pdb
-        # pdb.set_trace()
         line_vector_dict = self.line_geoms_to_vectors(line_geom)
-        # pdb.set_trace()
 
         ped_geom = self.get_map_geom(patch_box, patch_angle, self.ped_crossing_classes, location)
         ped_vector_list = self.line_geoms_to_vectors(ped_geom)['ped_crossing']
@@ -84,8 +80,9 @@ class VectorizedLocalMap(object):
         for pts, pts_num, _type in vectors:
             if _type != -1:
                 filtered_vectors.append({'pts': pts, 'pts_num': pts_num, 'type': _type})
-
         return filtered_vectors
+
+
 
     def get_map_geom(self, patch_box, patch_angle, layer_names, location):
         map_geom = []
@@ -102,6 +99,7 @@ class VectorizedLocalMap(object):
                 raise NotImplementedError
             map_geom.append((layer_name, geoms))
         return map_geom
+
 
     def _one_type_line_geom_to_vectors(self, line_geom):
         line_vectors = []
@@ -153,6 +151,7 @@ class VectorizedLocalMap(object):
 
         return self._one_type_line_geom_to_vectors(results)
 
+
     def line_geoms_to_vectors(self, line_geom):
         line_vectors_dict = dict()
         for line_type, a_type_of_lines in line_geom:
@@ -193,20 +192,19 @@ class VectorizedLocalMap(object):
 
         patch_x = patch_box[0]
         patch_y = patch_box[1]
-
         patch = NuScenesMapExplorer.get_patch_coord(patch_box, patch_angle)
         line_list = []
         records = getattr(self.nusc_maps[location], 'ped_crossing')
         for record in records:
             polygon = self.map_explorer[location].extract_polygon(record['polygon_token'])
-            poly_xy = np.array(polygon.exterior.xy)
+            poly_xy = np.array(polygon.exterior.xy)                      # (2, N)
             dist = np.square(poly_xy[:, 1:] - poly_xy[:, :-1]).sum(0)
             x1, x2 = np.argsort(dist)[-2:]
 
             add_line(poly_xy, x1, patch, patch_angle, patch_x, patch_y, line_list)
             add_line(poly_xy, x2, patch, patch_angle, patch_x, patch_y, line_list)
-
         return line_list
+
 
     def sample_pts_from_line(self, line):
         if self.fixed_num < 0:
