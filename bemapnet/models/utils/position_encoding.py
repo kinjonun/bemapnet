@@ -80,7 +80,7 @@ class PositionEmbeddingIPM(nn.Module):
         super().__init__()
 
         h, w_expand = num_pos
-        self.current_shape = (h, w_expand // 6)
+        self.current_shape = (h, w_expand // 7)
         self.input_shape = input_shape
 
         self.num_pos_feats = num_pos_feats
@@ -103,30 +103,30 @@ class PositionEmbeddingIPM(nn.Module):
         y = torch.linspace(0, self.input_shape[0] - 1, self.current_shape[0], dtype=torch.float)
         y_grid, x_grid = torch.meshgrid(y, x)
         z = torch.ones(self.current_shape)
-        feat_coords = torch.stack([x_grid, y_grid, z], dim=-1).to("cuda:0")  # (H, W, 3)
+        feat_coords = torch.stack([x_grid, y_grid, z], dim=-1).to("cuda:0")      # (H, W, 3)
         feat_coords = feat_coords.unsqueeze(0).repeat(n, 1, 1, 1).unsqueeze(0).repeat(b, 1, 1, 1, 1).to("cuda:0")  # (B, N, H, W, 3)
 
         ida_mats = ida_mats.view(b, n, 1, 1, 3, 3).to("cuda:0")
-        image_coords = ida_mats.inverse().matmul(feat_coords.unsqueeze(-1))  # (B, N, H, W, 3, 1)
+        image_coords = ida_mats.inverse().matmul(feat_coords.unsqueeze(-1))   # (B, N, H, W, 3, 1)
 
-        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3).to("cuda:0")  # (B, N, 1, 1, 3, 3)
-        normed_coords = torch.linalg.inv(intrinsic) @ image_coords  # (B, N, H, W, 3, 1)
+        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3).to("cuda:0")             # (B, N, 1, 1, 3, 3)
+        normed_coords = torch.linalg.inv(intrinsic) @ image_coords            # (B, N, H, W, 3, 1)
 
-        ext_rots = extrinsic[:, :, :3, :3]  # (B, N, 3, 3)
-        ext_trans = extrinsic[:, :, :3, 3].to("cuda:0")  # (B, N, 3)
+        ext_rots = extrinsic[:, :, :3, :3]                                    # (B, N, 3, 3)
+        ext_trans = extrinsic[:, :, :3, 3].to("cuda:0")                       # (B, N, 3)
 
-        ext_rots = ext_rots.view(b, n, 1, 1, 3, 3).to("cuda:0")  # (B, N, 1, 1, 3, 3)
-        world_coords = (ext_rots @ normed_coords).squeeze(-1)  # (B, N, H, W, 3)
+        ext_rots = ext_rots.view(b, n, 1, 1, 3, 3).to("cuda:0")               # (B, N, 1, 1, 3, 3)
+        world_coords = (ext_rots @ normed_coords).squeeze(-1)                 # (B, N, H, W, 3)
         world_coords = F.normalize(world_coords, p=2, dim=-1)
-        z_coord = world_coords[:, :, :, :, 2]  # (B, N, H, W)
+        z_coord = world_coords[:, :, :, :, 2]                                 # (B, N, H, W)
 
-        trans_z = ext_trans[:, :, 2].unsqueeze(-1).unsqueeze(-1)   # (B, N, 1, 1)
-        depth = - trans_z / z_coord  # (B, N, H, W)
-        valid = depth > 0  # (B, N, H, W)
+        trans_z = ext_trans[:, :, 2].unsqueeze(-1).unsqueeze(-1)              # (B, N, 1, 1)
+        depth = - trans_z / z_coord                                           # (B, N, H, W)
+        valid = depth > 0                                                     # (B, N, H, W)
 
-        xy_world_coords = world_coords[:, :, :, :, :2]  # (B, N, H, W, 2)
+        xy_world_coords = world_coords[:, :, :, :, :2]                        # (B, N, H, W, 2)
         xy_world_coords = xy_world_coords * depth.unsqueeze(-1)
-        valid = valid.unsqueeze(-1)  # (B, N, H, W, 1)
+        valid = valid.unsqueeze(-1)                                           # (B, N, H, W, 1)
 
         return xy_world_coords, valid
 
@@ -141,8 +141,8 @@ class PositionEmbeddingIPM(nn.Module):
             if do_flip[i]:
                 xy_pos_embed[i, :, :, :, 1] = -1 * xy_pos_embed[i, :, :, :, 1]
         # along with w
-        xy_pos_embed = torch.cat(torch.unbind(xy_pos_embed, dim=1), dim=-2)  # (B, H, N*W, 2)
-        valid = torch.cat(torch.unbind(valid, dim=1), dim=-2)  # (B, H, N*W, 2)
+        xy_pos_embed = torch.cat(torch.unbind(xy_pos_embed, dim=1), dim=-2)       # (B, H, N*W, 2)
+        valid = torch.cat(torch.unbind(valid, dim=1), dim=-2)                     # (B, H, N*W, 2)
         if self.sine_encoding:
             # Use Sine encoding to get 256 dim embeddings
             dim_t = torch.arange(self.num_pos_feats // 2, dtype=torch.float32, device=device)

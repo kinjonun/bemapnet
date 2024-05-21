@@ -10,7 +10,7 @@ from torch.utils.data.distributed import DistributedSampler
 from bemapnet.models.network import BeMapNet
 from bemapnet.engine.core import BeMapNetCli
 from bemapnet.engine.experiment import BaseExp
-from bemapnet.dataset.nuscenes import NuScenesMapDataset
+from bemapnet.dataset.av2 import Argoverse2MapDataset
 from bemapnet.dataset.transform import Normalize, ToTensor
 from bemapnet.utils.misc import get_param_groups, is_distributed
 
@@ -25,7 +25,7 @@ class EXPConfig:
     map_conf = dict(
         dataset_name="argoverse2",
         av2_root="data/argoverse2",
-        anno_root="data/argoverse2/customer/bemapnet",
+        anno_root="data/argoverse2/customer",
         split_dir="assets/splits/argoverse2",
         num_classes=3,
         ego_size=(60, 30),
@@ -219,7 +219,7 @@ class Exp(BaseExp):
             ]
         )
 
-        train_set = NuScenesMapDataset(
+        train_set = Argoverse2MapDataset(
             img_key_list=dataset_setup["img_key_list"],
             map_conf=self.exp_config.map_conf,
             ida_conf=self.exp_config.ida_conf,
@@ -255,7 +255,7 @@ class Exp(BaseExp):
             ]
         )
 
-        val_set = NuScenesMapDataset(
+        val_set = Argoverse2MapDataset(
             img_key_list=dataset_setup["img_key_list"],
             map_conf=self.exp_config.map_conf,
             ida_conf=self.exp_config.ida_conf,

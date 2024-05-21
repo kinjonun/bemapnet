@@ -301,6 +301,7 @@ class Exp(BaseExp):
 
     def training_step(self, batch):
         batch["images"] = batch["images"].float().cuda()
+        pdb.set_trace()
         outputs = self.model(batch)
         return self.model.module.post_processor(outputs["outputs"], batch["targets"])
 

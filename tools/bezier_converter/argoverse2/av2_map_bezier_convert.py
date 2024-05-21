@@ -89,8 +89,8 @@ class BezierConverter(object):
                  ):
         super().__init__()
         self.color = {0:"orange", 1:"blue", 2:"red", 3:"yellow", 4:"black"}
-        self.car_img = Image.open("/home/sun/MapTR/figs/car.png")
-        self.lidar_car_img = Image.open("/home/sun/MapTR/figs/lidar_car.png")
+        self.car_img = Image.open("/home/sun/Bev/BeMapNet/assets/figures/car.png")
+        self.lidar_car_img = Image.open("/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png")
         self.scale_width = 20 / 3
         self.scale_height = 20 / 3
         self.thickness = [1, 8]
@@ -408,14 +408,19 @@ class BezierConverter(object):
                     continue
                 vectors.append((LineString(np.array(instance)), self.CLASS2LABEL.get(self.vec_class[i], -1)))
 
-        ctr_points, ego_points, map_vectors, instance_masks, idx = self.divider_and_boundary_bezier_converter(vectors, ctr_points, ego_points, instance_masks, map_vectors, idx)
+        ctr_points, ego_points, map_vectors, instance_masks, idx = self.divider_and_boundary_bezier_converter(vectors,
+                                                                                                              ctr_points,
+                                                                                                              ego_points,
+                                                                                                              instance_masks,
+                                                                                                              map_vectors,
+                                                                                                              idx)
         self.ped_crossing_bezier_convert(idx, ctr_points, ego_points, instance_masks, map_vectors)
         return ctr_points, ego_points, map_vectors, instance_masks
 
 
 def main():
-    save_dir = "/home/sun/MapTR/data/argoverse2/customer"
-    ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_val.pkl"
+    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
+    ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_train.pkl"
     load_interval = 1
 
     data = mmcv.load(ann_file, file_format='pkl')

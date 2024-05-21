@@ -320,7 +320,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 # instance mask
                 mask_pc = targets["masks"][batch_id][cid]  # mask supervision  [1, 3, 400, 200],  mask_pc[400, 200]
                 unique_ids = torch.unique(mask_pc, sorted=True)[1:]   # 提取唯一值， 1维. 剔除0， 0代表没有instance
-                pdb.set_trace()
+
                 if num_ins == unique_ids.shape[0]:
                     ins_msk = (mask_pc.unsqueeze(0).repeat(num_ins, 1, 1) == unique_ids.view(-1, 1, 1)).float()  # [num_ins, 400, 200]
                 else:
