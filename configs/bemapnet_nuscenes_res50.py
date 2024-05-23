@@ -20,7 +20,7 @@ class EXPConfig:
 
     CLASS_NAMES = ["lane_divider", "ped_crossing", "drivable_area"]
     IMAGE_SHAPE = (900, 1600)
-    ida_conf = dict(resize_dims=(896, 512), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)
+    ida_conf = dict(resize_dims=(640, 384), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)
     INPUT_SHAPE = [int(ida_conf["resize_dims"][1] * (1 - ida_conf["up_crop_ratio"])), int(ida_conf["resize_dims"][0])]
 
     map_conf = dict(
@@ -301,7 +301,7 @@ class Exp(BaseExp):
 
     def training_step(self, batch):
         batch["images"] = batch["images"].float().cuda()
-        pdb.set_trace()
+        # pdb.set_trace()
         outputs = self.model(batch)
         return self.model.module.post_processor(outputs["outputs"], batch["targets"])
 

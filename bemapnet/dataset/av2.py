@@ -42,9 +42,10 @@ class Argoverse2MapDataset(Dataset):
             ida_mats.append(ida_mat)
 
         extrinsic = np.stack([np.eye(4) for _ in range(len(input_dict["ego2cam"]))], axis=0)
-        intrinsic = np.stack([np.eye(4) for _ in range(len(input_dict["camera_intrinsics"]))], axis=0)
+        intrinsic = np.stack([np.eye(3) for _ in range(len(input_dict["camera_intrinsics"]))], axis=0)
         extrinsic[:, :, :] = input_dict["ego2cam"]
-        intrinsic[:, :, :] = input_dict['camera_intrinsics']
+        camera_intrinsics = np.array(input_dict['camera_intrinsics'])
+        intrinsic[:, :, :] = camera_intrinsics[:, :3, :3]
 
         ctr_points = np.zeros((self.max_instances, max(self.max_pieces) * max(self.num_degree) + 1, 2), dtype=np.float)
         ins_labels = np.zeros((self.max_instances, 3), dtype=np.int16) - 1

@@ -1,5 +1,4 @@
 import os
-import pdb
 import torch
 import numpy as np
 import torch.nn as nn
@@ -18,8 +17,8 @@ from bemapnet.utils.misc import get_param_groups, is_distributed
 class EXPConfig:
 
     CLASS_NAMES = ["lane_divider", "ped_crossing", "drivable_area"]
-    IMAGE_SHAPE = (1550, 2048)       # debug
-    ida_conf = dict(resize_dims=(640, 384), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)     # (640, 384)
+    IMAGE_SHAPE = (1550, 2048)
+    ida_conf = dict(resize_dims=(640, 384), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)
     INPUT_SHAPE = [int(ida_conf["resize_dims"][1] * (1 - ida_conf["up_crop_ratio"])), int(ida_conf["resize_dims"][0])]
 
     map_conf = dict(
@@ -53,36 +52,32 @@ class EXPConfig:
 
     model_setup = dict(
         im_backbone=dict(
-            arch_name="resnet",
+            arch_name="efficient_net",
             bkb_kwargs=dict(
-                depth=50,
-                num_stages=4,
-                out_indices=(0, 1, 2, 3),
-                frozen_stages=1,
-                norm_cfg=dict(type='SyncBN', requires_grad=True),
-                norm_eval=True,
-                style='pytorch',
-                init_cfg=dict(
-                    type='Pretrained',
-                    checkpoint='assets/weights/resnet50-0676ba61.pth'),           # from pytorch
+                model_name='efficientnet-b0',
+                in_channels=3,
+                out_stride=32,
+                with_head=False,
                 with_cp=True,
+                norm_layer=nn.SyncBatchNorm,
+                weights_path="assets/weights/efficientnet-b0-355c32eb.pth",
             ),
             ret_layers=3,
             fpn_kwargs=dict(
-                conv_channels=(512, 1024, 2048),
+                conv_channels=(40, 112, 320),
                 fpn_cell_repeat=3,
-                fpn_num_filters=120,  # 128 -> 120  avoid OOM only
+                fpn_num_filters=128,
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True,
                 tgt_shape=(21, 49)
-            ),
+            )
         ),
         bev_decoder=dict(
             arch_name="transformer",
             net_kwargs=dict(
                 key='im_nek_features',
-                in_channels=600,
-                src_shape=(21, 49*7),         # debug
+                in_channels=640,
+                src_shape=(21, 49*7),
                 query_shape=(64, 32),
                 d_model=512,
                 nhead=8,
@@ -99,7 +94,7 @@ class EXPConfig:
                 ipm_proj_conf=dict(
                     map_size=map_conf["map_size"],
                     map_resolution=map_conf["map_resolution"],
-                    input_shape=(384, 640)
+                    input_shape=(512, 896)
                 )
             ),
         ),
@@ -278,6 +273,7 @@ class Exp(BaseExp):
             drop_last=False,
             sampler=sampler,
         )
+
         self.val_dataset_size = len(val_set)
         return val_loader
 

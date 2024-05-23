@@ -419,7 +419,7 @@ class BezierConverter(object):
 
 
 def main():
-    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
+    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train1"
     ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_train.pkl"
     load_interval = 1
 

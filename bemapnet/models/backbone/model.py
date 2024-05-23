@@ -11,7 +11,7 @@ class ResNetBackbone(nn.Module):
     def __init__(self, bkb_kwargs, fpn_kwarg=None, up_shape=None, ret_layers=1):
         super(ResNetBackbone, self).__init__()
         assert 0 < ret_layers < 4
-        self.ret_layers = ret_layers
+        self.ret_layers = ret_layers            # 3
         self.bkb = ResNet(**bkb_kwargs)
         self.fpn = None if fpn_kwarg is None else BiFPN(**fpn_kwarg)
         self.up_shape = None if up_shape is None else up_shape
@@ -45,6 +45,7 @@ class EfficientNetBackbone(nn.Module):
 
     def forward(self, inputs):
         images = inputs["images"]
+        # import pdb; pdb.set_trace()
         images = images.view(-1, *images.shape[-3:])
         endpoints = self.bkb.extract_endpoints(images)
         bkb_features = []
