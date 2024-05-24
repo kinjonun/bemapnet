@@ -563,8 +563,9 @@ class ResNet(BaseModule):
             x = self.conv1(x)
             x = self.norm1(x)
             x = self.relu(x)
-        x = self.maxpool(x)
+        x = self.maxpool(x)                # [6, 64, 96, 224] for (896x512);  [6, 64, 72, 160] for (640, 384)
         outs = []
+        # import pdb; pdb.set_trace()
         for i, layer_name in enumerate(self.res_layers):
             res_layer = getattr(self, layer_name)
             x = res_layer(x)

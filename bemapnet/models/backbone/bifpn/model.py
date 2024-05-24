@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from .utils import Swish, Conv2dStaticSamePadding, MaxPool2dStaticSamePadding
-
+import pdb
 
 class SeparableConvBlock(nn.Module):
     """
@@ -191,26 +191,26 @@ class BiFPNLayer(nn.Module):
 
     def _forward_fast_attention(self, inputs):
         if self.first_time:
-            p3, p4, p5 = inputs
+            p3, p4, p5 = inputs             # [6, 512, 48, 112]; [6, 1024, 24, 56];  [6, 2048, 12, 28] for size(896,512)
+                                            # [6, 512, 36, 80];  [6, 1024, 18, 40];  [6, 2048, 9, 20] for (640, 384)
+            p6_in = self.p5_to_p6(p5)                # [6, 120, 6, 14]      [6, 120, 5, 10];
+            p7_in = self.p6_to_p7(p6_in)             # [6, 120, 3, 7]       [6, 120, 3, 5]
 
-            p6_in = self.p5_to_p6(p5)
-            p7_in = self.p6_to_p7(p6_in)
-
-            p3_in = self.p3_down_channel(p3)
-            p4_in = self.p4_down_channel(p4)
-            p5_in = self.p5_down_channel(p5)
+            p3_in = self.p3_down_channel(p3)         # [6, 120, 48, 112]        [6, 120, 36, 80]
+            p4_in = self.p4_down_channel(p4)         # [6, 120, 24, 56]
+            p5_in = self.p5_down_channel(p5)         # [6, 120, 12, 28]
 
         else:
             # P3_0, P4_0, P5_0, P6_0 and P7_0
             p3_in, p4_in, p5_in, p6_in, p7_in = inputs
 
         # P7_0 to P7_2
-
+        # pdb.set_trace()
         # Weights for P6_0 and P7_0 to P6_1
         p6_w1 = self.p6_w1_relu(self.p6_w1)
         weight = p6_w1 / (torch.sum(p6_w1, dim=0) + self.epsilon)
         # Connections for P6_0 and P7_0 to P6_1 respectively
-        p6_up = self.conv6_up.forward(self.swish(weight[0] * p6_in + weight[1] * self.p6_upsample(p7_in)))
+        p6_up = self.conv6_up.forward(self.swish(weight[0] * p6_in + weight[1] * self.p6_upsample(p7_in)))   # bug
 
         # Weights for P5_0 and P6_1 to P5_1
         p5_w1 = self.p5_w1_relu(self.p5_w1)
@@ -222,13 +222,14 @@ class BiFPNLayer(nn.Module):
         p4_w1 = self.p4_w1_relu(self.p4_w1)
         weight = p4_w1 / (torch.sum(p4_w1, dim=0) + self.epsilon)
         # Connections for P4_0 and P5_1 to P4_1 respectively
-        p4_up = self.conv4_up.forward(self.swish(weight[0] * p4_in + weight[1] * self.p4_upsample(p5_up)))
+        p4_up = self.conv4_up.forward(self.swish(weight[0] * p4_in + weight[1] * self.p4_upsample(p5_up)))  # [6, 120, 24, 56]
 
         # Weights for P3_0 and P4_1 to P3_2
         p3_w1 = self.p3_w1_relu(self.p3_w1)
         weight = p3_w1 / (torch.sum(p3_w1, dim=0) + self.epsilon)
         # Connections for P3_0 and P4_1 to P3_2 respectively
-        p3_out = self.conv3_up.forward(self.swish(weight[0] * p3_in + weight[1] * self.p3_upsample(p4_up)))
+        # import pdb; pdb.set_trace()
+        p3_out = self.conv3_up.forward(self.swish(weight[0] * p3_in + weight[1] * self.p3_upsample(p4_up)))  # [6, 120, 48, 112]
 
         if self.first_time:
             p4_in = self.p4_down_channel_2(p4)
@@ -240,7 +241,7 @@ class BiFPNLayer(nn.Module):
         # Connections for P4_0, P4_1 and P3_2 to P4_2 respectively
         p4_out = self.conv4_down.forward(
             self.swish(weight[0] * p4_in + weight[1] * p4_up + weight[2] * self.p4_downsample(p3_out))
-        )
+        )                                                                # [6, 120, 24, 56]
 
         # Weights for P5_0, P5_1 and P4_2 to P5_2
         p5_w2 = self.p5_w2_relu(self.p5_w2)
@@ -248,7 +249,7 @@ class BiFPNLayer(nn.Module):
         # Connections for P5_0, P5_1 and P4_2 to P5_2 respectively
         p5_out = self.conv5_down.forward(
             self.swish(weight[0] * p5_in + weight[1] * p5_up + weight[2] * self.p5_downsample(p4_out))
-        )
+        )                                                                # [6, 120, 12, 28]
 
         # Weights for P6_0, P6_1 and P5_2 to P6_2
         p6_w2 = self.p6_w2_relu(self.p6_w2)
@@ -256,15 +257,15 @@ class BiFPNLayer(nn.Module):
         # Connections for P6_0, P6_1 and P5_2 to P6_2 respectively
         p6_out = self.conv6_down.forward(
             self.swish(weight[0] * p6_in + weight[1] * p6_up + weight[2] * self.p6_downsample(p5_out))
-        )
+        )                                                                # [6, 120, 6, 14]
 
         # Weights for P7_0 and P6_2 to P7_2
         p7_w2 = self.p7_w2_relu(self.p7_w2)
         weight = p7_w2 / (torch.sum(p7_w2, dim=0) + self.epsilon)
         # Connections for P7_0 and P6_2 to P7_2
         p7_out = self.conv7_down.forward(self.swish(weight[0] * p7_in + weight[1] * self.p7_downsample(p6_out)))
-
-        return p3_out, p4_out, p5_out, p6_out, p7_out
+        # import pdb; pdb.set_trace()
+        return p3_out, p4_out, p5_out, p6_out, p7_out                    # [6, 120, 3, 7]
 
     def _forward(self, inputs):
         if self.first_time:
@@ -358,6 +359,7 @@ class BiFPN(nn.Module):
             im_nek_features = checkpoint.checkpoint(self._forward, *im_bkb_features)
         else:
             im_nek_features = self._forward(*im_bkb_features)
+        # import pdb; pdb.set_trace()
         im_nek_features = [torch.cat([self.up_sample(x, tgt_shape=self.tgt_shape) for x in im_nek_features], dim=1)]
         return im_nek_features
 

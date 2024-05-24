@@ -19,10 +19,9 @@ class ResNetBackbone(nn.Module):
 
     def forward(self, inputs):
         images = inputs["images"]     # [1, 6, 3, 384, 896]
-        import pdb
-        # pdb.set_trace()
         images = images.view(-1, *images.shape[-3:])
         bkb_features = list(self.bkb(images)[-self.ret_layers:])
+        # import pdb; pdb.set_trace()
         nek_features = self.fpn(bkb_features) if self.fpn is not None else None
 
         # pdb.set_trace()

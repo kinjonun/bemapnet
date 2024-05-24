@@ -81,7 +81,7 @@ class EXPConfig:
             arch_name="transformer",
             net_kwargs=dict(
                 key='im_nek_features',
-                in_channels=600,
+                in_channels=600,               # 120*5   fpn_num_filters*5  (p3-p7_out)
                 src_shape=(21, 49*6),
                 query_shape=(64, 32),
                 d_model=512,
@@ -99,7 +99,7 @@ class EXPConfig:
                 ipm_proj_conf=dict(
                     map_size=map_conf["map_size"],
                     map_resolution=map_conf["map_resolution"],
-                    input_shape=(512, 896)
+                    input_shape=(384, 640)
                 )
             ),
         ),
