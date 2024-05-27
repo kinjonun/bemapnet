@@ -70,6 +70,7 @@ class EXPConfig:
             net_kwargs=dict(
                 key='im_nek_features',
                 in_channels=640,
+                num_camera=6,
                 src_shape=(21, 49*6),
                 query_shape=(64, 32),
                 d_model=512,

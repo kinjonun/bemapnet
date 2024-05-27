@@ -72,6 +72,7 @@ class PositionEmbeddingIPM(nn.Module):
 
     def __init__(self,
                  encoder=None,
+                 num_camera=7,
                  num_pos=(16, 168),
                  input_shape=(512, 896),
                  num_pos_feats=64,
@@ -80,7 +81,7 @@ class PositionEmbeddingIPM(nn.Module):
         super().__init__()
 
         h, w_expand = num_pos
-        self.current_shape = (h, w_expand // 7)
+        self.current_shape = (h, w_expand // num_camera)
         self.input_shape = input_shape
 
         self.num_pos_feats = num_pos_feats

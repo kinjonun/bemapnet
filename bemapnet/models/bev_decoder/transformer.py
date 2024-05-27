@@ -15,6 +15,7 @@ class Transformer(nn.Module):
     def __init__(
         self,
         in_channels,
+        num_camera=7,
         src_shape=(32, 336),
         query_shape=(32, 32),
         d_model=512,
@@ -40,7 +41,7 @@ class Transformer(nn.Module):
         self.d_model = d_model
         self.nhead = nhead
         self.ipm_proj_conf = ipm_proj_conf
-
+        self.num_camera = num_camera
         self.ipmpe_with_sine = ipmpe_with_sine
         self.enforce_no_aligner = enforce_no_aligner
 
@@ -85,7 +86,7 @@ class Transformer(nn.Module):
         elif src_pos_embed == 'ipm_learned':
             input_shape = self.ipm_proj_conf['input_shape']
             src_pos_embed_layer = PositionEmbeddingIPM(
-                pos_embed_encoder, self.src_shape, input_shape, num_pos_feats=self.d_model,
+                pos_embed_encoder, self.num_camera, self.src_shape, input_shape, num_pos_feats=self.d_model,
                 sine_encoding=self.ipmpe_with_sine)
         else:
             raise NotImplementedError
