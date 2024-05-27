@@ -74,7 +74,7 @@ class RasterizedLocalMap(object):
                         map_points.append(pts.tolist())
                 else:
                     pts2 = self.patch_size - np.array(new_line.coords[:])[:, ::-1]
-                    # pdb.set_trace()
+                    pdb.set_trace()
                     ctr_points.append(pbc_func(pts2))
                     new_line = affinity.scale(new_line, xfact=scale_width, yfact=scale_height, origin=(0, 0))
                     map_masks, idx = self.mask_for_lines(new_line, map_masks, self.thickness, idx, trans_type)

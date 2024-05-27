@@ -33,7 +33,7 @@ class PiecewiseBezierCurve(object):
     def _get_interpolated_points(self, points):
         line = LineString(points)
         distances = np.linspace(0, line.length, self.num_points)
-        sampled_points = np.array([list(line.interpolate(distance).coords) for distance in distances]).reshape(-1, 3)
+        sampled_points = np.array([list(line.interpolate(distance).coords) for distance in distances]).reshape(-1, 2)
         return sampled_points
 
     def _get_chamfer_distance(self, points_before, points_after):
@@ -94,6 +94,7 @@ class BezierConverter(object):
         self.scale_width = 20 / 3
         self.scale_height = 20 / 3
         self.thickness = [1, 8]
+        self.patch_size = [30, 60]
         self.canvas_size = [200, 400]
         self.max_channel = 3
         self.num_degrees = [2, 1, 3]
@@ -188,15 +189,14 @@ class BezierConverter(object):
     def plot_line(self, points, ctr_point_type=0, ):
         for i in range(len(points) - 1):
             plt.plot([points[i][0], points[i + 1][0]], [points[i][1], points[i + 1][1]], color=self.color[ctr_point_type])
-
     def plot_ctr_points(self, ctr_points):
+        # plt.figure(figsize=(16, 8))
         for i in range(len(ctr_points)):
             ctr_point, ctr_point_type = ctr_points[i]
             for j in range(len(ctr_point)):
-                x = ctr_point[j][0]
-                y = ctr_point[j][1]
+                x = -ctr_point[j][1] + np.array(self.patch_size[1])/2
+                y = -ctr_point[j][0] + np.array(self.patch_size[0])/2
                 plt.scatter(x, y, c=self.color[ctr_point_type])
-
     def plot_ego_points(self, ego_points):
         plt.figure(figsize=(16, 8))
         plt.xlim(-30, 30)
@@ -206,7 +206,6 @@ class BezierConverter(object):
             self.plot_line(ego_point, ego_point_type)
         plt.imshow(self.car_img, extent=[-1.5, 1.5, -1.5, 1.5])
         plt.text(-25, 16, 'lidar timestamp:  ' + self.data_info["timestamp"], color='red', fontsize=26)
-
     def plot_map_points(self, map_vectors):
         plt.figure(figsize=(8, 16))
         plt.xlim(0, 200)
@@ -215,7 +214,6 @@ class BezierConverter(object):
         for i in range(len(map_vectors)):
             map_vector, map_vector_type = map_vectors[i]
             self.plot_line(map_vector, map_vector_type)
-
     def plot_semantic_map(self, semantic_map):
         plt.figure(figsize=(16, 10))
         plt.subplot(1, 3, 1)
@@ -227,19 +225,25 @@ class BezierConverter(object):
         plt.subplot(1, 3, 3)
         plt.title('boundary')
         plt.imshow(semantic_map[0][2], cmap='gray')
-
     def plot_curve_recovery_by_ctr_points(self, ctr_points):
         plt.figure(figsize=(16, 8))
         plt.xlim(-30, 30)
         plt.ylim(-15, 15)
+        # pdb.set_trace()
         for i in range(len(ctr_points)):
             ctr_point, ctr_point_type = ctr_points[i]
+            # pdb.set_trace()
             degree = self.num_degrees[ctr_point_type]
             pbc_func = self.pbc_funcs[degree]
             # print(ctr_point)
             if ctr_point_type == 1:
-                self.plot_line(ctr_point, ctr_point_type)
+                points = []
+                for point in ctr_point:
+                    new_point = -point[::-1] + np.array(self.patch_size[::-1]) / 2
+                    points.append(new_point)
+                self.plot_line(points, ctr_point_type)
             else:
+                ctr_point = -ctr_point[:, ::-1] + np.array(self.patch_size[::-1]) / 2
                 num_piece = len(ctr_point) // degree
                 for j in range(num_piece):
                     curve_recovery = pbc_func.bezier_coefficient.dot(ctr_point[degree * j:degree * (j + 1) + 1])
@@ -283,12 +287,17 @@ class BezierConverter(object):
                     raise ValueError("LineString does not contain enough points to form a segment.")
                 max_length = max(segment_lengths)
                 max_index = segment_lengths.index(max_length)
-                ctr_points.append(((ped_instance[max_index][:2], ped_instance[max_index + 1][:2]), 1))
+                pt1 = np.array(self.patch_size) / 2 - ped_instance[max_index][:2][::-1]
+                pt2 = np.array(self.patch_size) / 2 - ped_instance[max_index + 1][:2][::-1]
+                # pdb.set_trace()
+                ctr_points.append(((pt1, pt2), 1))
                 self.ego_points_and_map_vectors(ped_instance[max_index][:2], ped_instance[max_index + 1][:2], idx,
                                                 ego_points, instance_masks, map_vectors)
                 if num_points > 3:
                     idx2 = np.argsort(segment_lengths)[-2]        # 第二长
-                    ctr_points.append(((ped_instance[idx2][:2], ped_instance[idx2 + 1][:2]), 1))
+                    pt3 = np.array(self.patch_size) / 2 - ped_instance[idx2][:2][::-1]
+                    pt4 = np.array(self.patch_size) / 2 - ped_instance[idx2 + 1][:2][::-1]
+                    ctr_points.append(((pt3, pt4), 1))
                     self.ego_points_and_map_vectors(ped_instance[idx2][:2], ped_instance[idx2 + 1][:2], idx,
                                                     ego_points, instance_masks, map_vectors)
 
@@ -333,8 +342,8 @@ class BezierConverter(object):
     def ego_points_and_map_vectors(self, p1, p2, idx, ego_points, instance_masks, map_vectors):
         map_masks_ret = []
         map_masks = np.zeros((len(self.thickness), *self.canvas_size), np.uint8)  # [2, 200, 400]
+
         ped_line = LineString((p1, p2))
-        # pdb.set_trace()
         distances = np.arange(0, ped_line.length, 1)
         sampled_point = np.array([list(ped_line.interpolate(distance).coords) for distance in distances]).reshape(-1, 2)
         sampled_point = np.concatenate((sampled_point, p2.reshape(1, -1)), axis=0)
@@ -380,7 +389,6 @@ class BezierConverter(object):
             map_masks, idx = self.mask_for_lines(new_line, map_masks, self.thickness, idx, )
             for i in range(len(self.thickness)):
                 map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
-
             # pdb.set_trace()
             map_masks_ret = np.array(map_masks_ret)
             instance_masks[:, instance_type, :, :] += map_masks_ret
@@ -388,9 +396,10 @@ class BezierConverter(object):
             pts = np.array(self.canvas_size) - np.array(new_line.coords[:])[:, :2][:, ::-1]
             map_vectors.append((pts, instance_type))
 
+            pts2 = np.array(self.patch_size)/2 - sampled_point[:, :2][:, ::-1]
             pbc_func = self.pbc_funcs[self.num_degrees[instance_type]]
-            ctr_points.append((pbc_func(sampled_point), instance_type))
-            # print("ctr_points", ctr_points)
+            ctr_points.append((pbc_func(pts2), instance_type))
+            # pdb.set_trace()
         return ctr_points, ego_points, map_vectors, instance_masks, idx
 
     def convert(self):
@@ -419,16 +428,17 @@ class BezierConverter(object):
 
 
 def main():
-    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train1"
+    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
     ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_train.pkl"
     load_interval = 1
 
     data = mmcv.load(ann_file, file_format='pkl')
     data_infos = list(sorted(data['samples'], key=lambda e: e['timestamp']))
     data_infos = data_infos[::load_interval]
-    for j in tqdm(range(len(data_infos))):
+    for j in tqdm(range(200, 201)):
+    # for j in tqdm(range(len(data_infos))):
         data_info = data_infos[j]
-        # print("timestamp", data_info["timestamp"])
+        print("timestamp", data_info["timestamp"])
 
         bezier_convert = BezierConverter(data_info)
         input_dict = bezier_convert.get_data_info(data_info)
@@ -451,13 +461,13 @@ def main():
                             semantic_mask=semantic_masks[0], ctr_points=instance_ctr_points, ego_points=instance_ego_points,
                             map_vectors=instance_map_points)
 
-        # bezier_convert.plot_curve_recovery_by_ctr_points(ctr_points)
-        # bezier_convert.plot_ctr_points(ctr_points)
+        bezier_convert.plot_curve_recovery_by_ctr_points(ctr_points)
+        bezier_convert.plot_ctr_points(ctr_points)
         # bezier_convert.plot_ego_points(ego_points)
         # bezier_convert.plot_map_points(map_vectors)
         # bezier_convert.plot_semantic_map(instance_masks)
         #
-        # plt.show()
+        plt.show()
 
 if __name__ == '__main__':
     main()

@@ -80,7 +80,7 @@ class PositionEmbeddingIPM(nn.Module):
         super().__init__()
 
         h, w_expand = num_pos
-        self.current_shape = (h, w_expand // 6)
+        self.current_shape = (h, w_expand // 7)
         self.input_shape = input_shape
 
         self.num_pos_feats = num_pos_feats

@@ -2,6 +2,7 @@ import pdb
 import cv2
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.special import comb as n_over_k
@@ -101,9 +102,9 @@ class SetCriterion(nn.Module):
         loss_masks, loss_ctr, loss_end, loss_curve, loss_rec = 0, 0, 0, 0, 0
         device = outputs["ins_masks"][0][0].device
         num_decoders, num_classes = len(matching_indices), len(matching_indices[0])
-        # matching_indices[0]:  [[(tensor([5, 6]), tensor([0, 1]))],
-        # [(tensor([], dtype=torch.int64), tensor([], dtype=torch.int64))],
-        # [(tensor([3, 4, 5]), tensor([0, 1, 2]))]]
+                                # matching_indices[0]:  [[(tensor([5, 6]), tensor([0, 1]))],
+                                # [(tensor([], dtype=torch.int64), tensor([], dtype=torch.int64))],
+                                # [(tensor([3, 4, 5]), tensor([0, 1, 2]))]]
         # pdb.set_trace()
 
         for i in range(num_decoders):
@@ -111,7 +112,6 @@ class SetCriterion(nn.Module):
             for j in range(num_classes):
                 w2 = self.criterion_conf["class_weights"][j] if "class_weights" in self.criterion_conf else 1.0
                 num_instances = sum(len(t["obj_labels"][j]) for t in targets)         # len(targets)=1, 字典在列表里
-                # pdb.set_trace()
                 num_instances = torch.as_tensor([num_instances], dtype=torch.float, device=device)   # 2
                 if is_distributed() and is_available():
                     torch.distributed.all_reduce(num_instances)
@@ -126,7 +126,7 @@ class SetCriterion(nn.Module):
                 src_masks = outputs["ins_masks"][i][j][src_idx]           # [2, 400, 200]
                 tgt_masks = [t["ins_masks"][j] for t in targets]          # list([2, 400, 200])
                 tgt_masks, _ = nested_tensor_from_tensor_list(tgt_masks).decompose()     # [1, 2, 400, 200]
-                tgt_masks = tgt_masks.to(src_masks)[tgt_idx]                             # [2, 400, 200]
+                tgt_masks = tgt_masks.to(src_masks)[tgt_idx]      # 将 tgt_masks 转移到src所在的设备  [2, 400, 200]
                 loss_masks += w * self.matcher.ins_mask_loss(src_masks, tgt_masks, "loss").sum() / num_instances * w2
 
                 # eof indices classification
@@ -292,7 +292,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
 
                 # pdb.set_trace()
                 # object class: 0 or 1
-                ins_obj = torch.zeros((num_ins,), dtype=torch.long).cuda()
+                ins_obj = torch.zeros((num_ins,), dtype=torch.long).cuda()      # 0 为前景
                 ins_objects.append(ins_obj)
 
                 # bezier control points coords
@@ -318,7 +318,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 curve_points.append(curve_pts)
 
                 # instance mask
-                mask_pc = targets["masks"][batch_id][cid]  # mask supervision  [1, 3, 400, 200],  mask_pc[400, 200]
+                mask_pc = targets["masks"][batch_id][cid]  # mask supervision      [1, 3, 400, 200],  mask_pc[400, 200]
                 unique_ids = torch.unique(mask_pc, sorted=True)[1:]   # 提取唯一值， 1维. 剔除0， 0代表没有instance
 
                 if num_ins == unique_ids.shape[0]:
@@ -336,7 +336,11 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 # semantic mask
                 sem_msk = (ins_msk.sum(0) > 0).float()
                 sem_masks.append(sem_msk)
-
+            # pdb.set_trace()
+            # show_mask = ins_masks[2][0].cpu()
+            # numpy_array = show_mask.numpy()
+            # plt.imshow(numpy_array, cmap='gray')
+            # plt.show()
             targets_refactored.append({
                 "sem_masks": sem_masks, "ins_masks": ins_masks, "obj_labels": ins_objects,
                 "ctr_points": ctr_points, "end_labels": end_labels, "curve_points": curve_points,
