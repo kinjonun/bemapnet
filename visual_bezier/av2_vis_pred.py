@@ -64,14 +64,64 @@ def save_surroud(cams_dict, sample_dir, timestamp):
     full_canvas = np.full((2972 + 1550, 8192, 3), color, dtype=np.uint8)
     full_canvas[:2972, :, :] = resized_first_row_canvas
     full_canvas[2972:, :, :] = second_row_canvas
-    cams_img_path = osp.join(sample_dir, timestamp+'surroud_view.jpg')
+    cams_img_path = osp.join(sample_dir, 'surroud_view.jpg')
     cv2.imwrite(cams_img_path, full_canvas, [cv2.IMWRITE_JPEG_QUALITY, 70])
+
+def concat(sample_path):
+    gt_path = osp.join(sample_path, 'GT.png')
+    # pred_path = osp.join(sample_path, 'PRED_MAP_plot.png')
+    # pretrained_path = osp.join(sample_path, 'pretrained_PRED.png')
+    surroud_path = osp.join(sample_path, 'surroud_view.jpg')
+    gt = cv2.imread(gt_path)
+    # pred = cv2.imread(pred_path)
+    # pretrained =  cv2.imread(pretrained_path)
+    surroud = cv2.imread(surroud_path)
+
+    surroud_h, surroud_w, _ = surroud.shape
+    pred_h, pred_w, _ = gt.shape
+    resize_ratio = surroud_h / pred_h
+
+    resized_w = pred_w * resize_ratio
+    # resized_pred = cv2.resize(pred, (int(resized_w), int(surroud_h)))
+    resized_gt_map_img = cv2.resize(gt, (int(resized_w), int(surroud_h)))
+    # resized_pretrained = cv2.resize(pretrained, (int(resized_w), int(surroud_h)))
+
+    img = cv2.hconcat([surroud, resized_gt_map_img])
+
+    cams_img_path = osp.join(sample_path, 'Sample_vis.jpg')
+    cv2.imwrite(cams_img_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+
+def save_GT_visual(ego_points, ctr_points, car_img, sample_path):
+    plt.figure(figsize=(3, 6))
+    plt.ylim(-30, 30)
+    plt.xlim(-15, 15)
+    color = {0: 'g', 1: 'orange', 2: 'b', 3: 'r', 4: "c", 5: "m", 6: "k", 7: "y", 8: "deeppink"}
+
+    for item in ctr_points:
+        pts = item['pts']
+        y = [-pt[0] + 15 for pt in pts]
+        x = [-pt[1] + 30 for pt in pts]
+        plt.scatter(y, x, c=color[item['type']+1])
+
+    for item in ego_points:
+        pts = item['pts']
+        for i in range(len(pts) - 1):
+            plt.plot([pts[i][1], pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type']+1])
+
+    plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
+    plt.text(-15, 31, 'GT', color='red', fontsize=12)
+    plt.tight_layout()
+
+    map_path = osp.join(sample_path, 'GT.png')
+    plt.savefig(map_path, bbox_inches='tight', format='png', dpi=1200)
+    plt.close()
 
 def main():
     anno_path = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
     # eval_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_nuscenes_res50/2024-05-03T10:33:35"
     project_path = "/home/sun/Bev/BeMapNet"
-    sample_dir = "/home/sun/Bev/BeMapNet/visual_bezier"
+    sample_path = "/home/sun/Bev/BeMapNet/visual_bezier"
     # folder_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_nuscenes_res50/2024-05-03T10:33:35/evaluation/results"
     car_img = Image.open('/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png')
     color = {0: 'r', 1: 'orange', 2: 'b', 3: 'g', 4: "c", 5: "m", 6: "k", 7: "y", 8: "deeppink"}
@@ -89,6 +139,8 @@ def main():
         data_dict = {key: data[key].tolist() for key in data.files}
         input_dict = data_dict["input_dict"]  # ['timestamp', 'pts_filename', 'lidar_path', 'ego2global_translation', 'ego2global_rotation', 'log_id', 'scene_token', 'camego2global', 'img_filename', 'lidar2img', 'camera_intrinsics', 'ego2cam', 'camera2ego', 'cam_type', 'lidar2ego', 'ann_info']
         timestamp = input_dict["timestamp"]
+        ego_points = data_dict["ego_points"]
+        ctr_points = data_dict["ctr_points"]
 
         img_filename =input_dict["img_filename"]  # ('data/argoverse2/sensor/val/201fe83b-7dd7-38f4-9d26-7b4a668638a9/sensors/cameras/ring_front_center/315969617449927219', '.jpg')
         cams_dict = {}
@@ -97,8 +149,10 @@ def main():
             img_name = path.parts[-2]
             img_path = osp.join(project_path, img)
             cams_dict[img_name] = img_path
-        save_surroud(cams_dict, sample_dir, timestamp)
+        save_surroud(cams_dict, sample_path, timestamp)
 
+        save_GT_visual(ego_points, ctr_points, car_img, sample_path)
+        concat(sample_path)
         # if cam_img is not None:
         #     cv2.imshow("cam_img", cam_img)
         #     cv2.waitKey(0)

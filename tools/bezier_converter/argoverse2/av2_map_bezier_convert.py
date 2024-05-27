@@ -428,17 +428,17 @@ class BezierConverter(object):
 
 
 def main():
-    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
-    ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_train.pkl"
+    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_val"
+    ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_val.pkl"
     load_interval = 1
 
     data = mmcv.load(ann_file, file_format='pkl')
     data_infos = list(sorted(data['samples'], key=lambda e: e['timestamp']))
     data_infos = data_infos[::load_interval]
-    for j in tqdm(range(200, 201)):
-    # for j in tqdm(range(len(data_infos))):
+    # for j in tqdm(range(200, 201)):
+    for j in tqdm(range(len(data_infos))):
         data_info = data_infos[j]
-        print("timestamp", data_info["timestamp"])
+        # print("timestamp", data_info["timestamp"])
 
         bezier_convert = BezierConverter(data_info)
         input_dict = bezier_convert.get_data_info(data_info)
@@ -461,13 +461,13 @@ def main():
                             semantic_mask=semantic_masks[0], ctr_points=instance_ctr_points, ego_points=instance_ego_points,
                             map_vectors=instance_map_points)
 
-        bezier_convert.plot_curve_recovery_by_ctr_points(ctr_points)
-        bezier_convert.plot_ctr_points(ctr_points)
+        # bezier_convert.plot_curve_recovery_by_ctr_points(ctr_points)
+        # bezier_convert.plot_ctr_points(ctr_points)
         # bezier_convert.plot_ego_points(ego_points)
         # bezier_convert.plot_map_points(map_vectors)
         # bezier_convert.plot_semantic_map(instance_masks)
         #
-        plt.show()
+        # plt.show()
 
 if __name__ == '__main__':
     main()
