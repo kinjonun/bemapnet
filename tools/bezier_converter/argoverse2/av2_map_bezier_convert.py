@@ -291,15 +291,15 @@ class BezierConverter(object):
                 pt2 = np.array(self.patch_size) / 2 - ped_instance[max_index + 1][:2][::-1]
                 # pdb.set_trace()
                 ctr_points.append(((pt1, pt2), 1))
-                self.ego_points_and_map_vectors(ped_instance[max_index][:2], ped_instance[max_index + 1][:2], idx,
+                idx = self.ego_points_and_map_vectors(ped_instance[max_index][:2], ped_instance[max_index + 1][:2], idx,
                                                 ego_points, instance_masks, map_vectors)
                 if num_points > 3:
                     idx2 = np.argsort(segment_lengths)[-2]        # 第二长
                     pt3 = np.array(self.patch_size) / 2 - ped_instance[idx2][:2][::-1]
                     pt4 = np.array(self.patch_size) / 2 - ped_instance[idx2 + 1][:2][::-1]
                     ctr_points.append(((pt3, pt4), 1))
-                    self.ego_points_and_map_vectors(ped_instance[idx2][:2], ped_instance[idx2 + 1][:2], idx,
-                                                    ego_points, instance_masks, map_vectors)
+                    idx = self.ego_points_and_map_vectors(ped_instance[idx2][:2], ped_instance[idx2 + 1][:2], idx,
+                                                          ego_points, instance_masks, map_vectors)
 
     # def ped_crossing_bezier_converter(self, idx, ctr_points, ego_points, instance_masks, map_vectors):
     #     ped_crossing = self.data_info["annotation"]["ped_crossing"]
@@ -354,8 +354,9 @@ class BezierConverter(object):
         # print("koordinates: ", np.array(list(instance_line.coords)))
         ped_line = affinity.affine_transform(vectorize_line, [1.0, 0.0, 0.0, 1.0, self.trans_x, self.trans_y])
         ped_line = affinity.scale(ped_line, xfact=self.scale_width, yfact=self.scale_height, origin=(0, 0))
-
+        # pdb.set_trace()
         map_masks, idx = self.mask_for_lines(ped_line, map_masks, self.thickness, idx, )
+        print(idx)
         for i in range(len(self.thickness)):
             map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
 
@@ -364,6 +365,7 @@ class BezierConverter(object):
 
         map_points = np.array(self.canvas_size) - np.array(ped_line.coords[:])[:, :2][:, ::-1]
         map_vectors.append((map_points, 1))
+        return idx
 
     def divider_and_boundary_bezier_converter(self, vectors, ctr_points, ego_points, instance_masks, map_vectors, idx):
         for instance, instance_type in vectors:
@@ -377,15 +379,18 @@ class BezierConverter(object):
                 else:
                     print(instance.geom_type)
 
+
             last_point = np.array(list(instance.coords)[-1]).reshape(1, -1)
             sampled_point = np.concatenate((sampled_point, last_point), axis=0)  # 线段长度小于1时，sampled_point就只剩一个点
             ego_points.append((sampled_point, instance_type))
             # print("number of sampled points", len(sampled_point))
 
+
             instance_line = LineString(sampled_point)
             # print("koordinates: ", np.array(list(instance_line.coords)))
             new_line = affinity.affine_transform(instance_line, [1.0, 0.0, 0.0, 1.0, self.trans_x, self.trans_y])
             new_line = affinity.scale(new_line, xfact=self.scale_width, yfact=self.scale_height, origin=(0, 0))
+
             map_masks, idx = self.mask_for_lines(new_line, map_masks, self.thickness, idx, )
             for i in range(len(self.thickness)):
                 map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
@@ -393,8 +398,10 @@ class BezierConverter(object):
             map_masks_ret = np.array(map_masks_ret)
             instance_masks[:, instance_type, :, :] += map_masks_ret
 
+
             pts = np.array(self.canvas_size) - np.array(new_line.coords[:])[:, :2][:, ::-1]
             map_vectors.append((pts, instance_type))
+
 
             pts2 = np.array(self.patch_size)/2 - sampled_point[:, :2][:, ::-1]
             pbc_func = self.pbc_funcs[self.num_degrees[instance_type]]
@@ -435,8 +442,8 @@ def main():
     data = mmcv.load(ann_file, file_format='pkl')
     data_infos = list(sorted(data['samples'], key=lambda e: e['timestamp']))
     data_infos = data_infos[::load_interval]
-    # for j in tqdm(range(200, 201)):
-    for j in tqdm(range(len(data_infos))):
+    for j in tqdm(range(200, 201)):
+    # for j in tqdm(range(len(data_infos))):
         data_info = data_infos[j]
         # print("timestamp", data_info["timestamp"])
 
@@ -465,9 +472,9 @@ def main():
         # bezier_convert.plot_ctr_points(ctr_points)
         # bezier_convert.plot_ego_points(ego_points)
         # bezier_convert.plot_map_points(map_vectors)
-        # bezier_convert.plot_semantic_map(instance_masks)
+        bezier_convert.plot_semantic_map(instance_masks)
         #
-        # plt.show()
+        plt.show()
 
 if __name__ == '__main__':
     main()
