@@ -1,4 +1,5 @@
 import pdb
+import copy
 import cv2
 import torch
 import numpy as np
@@ -160,6 +161,7 @@ class SetCriterion(nn.Module):
                     tgt_curves[idx] = targets[batch_id]['curve_points'][j][gt_id]
                 num_pt = src_curves.shape[-2] * src_curves.shape[-1]                  # 100 * 2
                 loss_curve += w * F.l1_loss(src_curves, tgt_curves, reduction='sum') / num_instances / num_pt * w2
+                # loss_curve += w * F.l1_loss(src_curves, tgt_curves) * w2
 
                 # recovery loss
                 loss_rec += w * self.matcher.recovery_loss(src_curves, tgt_masks).sum() / num_instances * w2
@@ -290,7 +292,6 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 indices = ins_ids[torch.where(cls_ids == cid)]
                 num_ins = indices.shape[0]
 
-                # pdb.set_trace()
                 # object class: 0 or 1
                 ins_obj = torch.zeros((num_ins,), dtype=torch.long).cuda()      # 0 为前景
                 ins_objects.append(ins_obj)
@@ -303,7 +304,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 ctr_points.append(ctr_pts)
 
                 # piecewise end indices
-                end_indices = targets['labels'][batch_id][indices][:, 1].long()      # targets['labels']: [1, 40, 3]
+                end_indices = targets['labels'][batch_id][indices][:, 1].long()      # targets['labels]: [1, 40, 3] 段数-1
                 end_labels.append(end_indices)
 
                 # bezier valid masks
@@ -325,7 +326,8 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                     ins_msk = (mask_pc.unsqueeze(0).repeat(num_ins, 1, 1) == unique_ids.view(-1, 1, 1)).float()  # [num_ins, 400, 200]
                 else:
                     ins_msk = np.zeros((num_ins, *self.map_size), dtype=np.uint8)
-                    for i, ins_pts in enumerate(curve_pts):
+                    curve_pts_copy = copy.deepcopy(curve_pts)
+                    for i, ins_pts in enumerate(curve_pts_copy):
                         ins_pts[:, 0] *= self.map_size[1]
                         ins_pts[:, 1] *= self.map_size[0]
                         ins_pts = ins_pts.cpu().data.numpy().astype(np.int32)
@@ -336,7 +338,6 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
                 # semantic mask
                 sem_msk = (ins_msk.sum(0) > 0).float()
                 sem_masks.append(sem_msk)
-            # pdb.set_trace()
             # show_mask = ins_masks[2][0].cpu()
             # numpy_array = show_mask.numpy()
             # plt.imshow(numpy_array, cmap='gray')
@@ -360,6 +361,7 @@ class PiecewiseBezierMapPostProcessor(nn.Module):
 
         points_ids = torch.tensor(list(range(self.curve_size))).long().to(device)
         points_ids = (end_indices + 1).unsqueeze(1) * points_ids.unsqueeze(0)             # [20, 100]
+        # ([[  0,   2,   4,   6,   8,  10,  12,  14,   ... 196, 198], [  0,   1,   2,   3, ...  98,  99], [ ...
 
         if num_instances > 0:
             ctr_points_flatten = ctr_points[:, pieces_ids, :].flatten(0, 1)               # [20, 3, 3, 2] -> [60, 3, 2]
