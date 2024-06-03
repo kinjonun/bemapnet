@@ -2,14 +2,13 @@ import pdb
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-import torch
 from PIL import Image
 import os
 import os.path as osp
-from nuscenes import NuScenes
 import cv2
 from pathlib import Path
 import random
+from tqdm import tqdm
 
 caption_by_cam = {
     'ring_front_center': 'CAM_FRONT_CENTER',
@@ -30,16 +29,16 @@ def save_gt_visual(data_dict, car_img, sample_path):
 
     ego_points = data_dict["ego_points"]
     ctr_points = data_dict["ctr_points"]
-    for item in ctr_points:
-        pts = item['pts']
-        y = [-pt[0] + 15 for pt in pts]
-        x = [-pt[1] + 30 for pt in pts]
-        plt.scatter(y, x, c=color[item['type'] + 1])
+    # for item in ctr_points:
+    #     pts = item['pts']
+    #     y = [pt[0] - 15 for pt in pts]
+    #     x = [-pt[1] + 30 for pt in pts]
+    #     plt.scatter(y, x, c=color[item['type'] + 1])
 
     for item in ego_points:
         pts = item['pts']
         for i in range(len(pts) - 1):
-            plt.plot([pts[i][1], pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type'] + 1])
+            plt.plot([-pts[i][1], -pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type'] + 1])
 
     plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
     plt.text(-15, 31, 'GT', color='red', fontsize=12)
@@ -51,25 +50,24 @@ def save_gt_visual(data_dict, car_img, sample_path):
 
 
 def save_pred_visual(pred_path, sample_path):
-    _, _, epoch_num = pred_path.split('/')[-4].rpartition('_')
+    _, _, epoch_num = pred_path.split('/')[-3].rpartition('_')
 
     data = np.load(pred_path, allow_pickle=True)
     dt_res = data['dt_res'].tolist()
     res = dict(dt_res)
-    points = res["map"]
+    map_points = res["map"]
     label = res["pred_label"]
 
     plt.figure(figsize=(3, 6))
     plt.ylim(-30, 30)
     plt.xlim(-15, 15)
-    color = {0: 'r', 1: 'orange', 2: 'b', 3: 'g', 4: "c", }
-    skla = 15 / 100
-    for i in range(1, len(res["map"])):
-        ins = np.int16(res["map"][i])
-        for j in range(len(ins) - 1):
-            x = ins[j][0]
-            y = 400 - ins[j][1]
+    color = {0: 'g', 1: 'orange', 2: 'b', 3: 'r', 4: "c", }
 
+
+    skla = 15 / 100
+    for i in range(1, len(map_points)):
+        ins = np.int16(map_points[i])
+        for j in range(len(ins) - 1):
             plt.plot([(ins[j][0] - 100) * skla, (ins[j + 1][0] - 100) * skla],
                      [(200 - ins[j][1]) * skla, (200 - ins[j + 1][1]) * skla], c=color[label[i]])
 
@@ -153,42 +151,45 @@ def concat(sample_path):
     resized_pred = [cv2.resize(pred, (int(resized_w), int(surround_h))) for pred in pred_images]
     resized_gt_map_img = cv2.resize(gt, (int(resized_w), int(surround_h)))
 
-    img = cv2.hconcat([surround, resized_gt_map_img])
-    # img = cv2.hconcat([surround, resized_gt_map_img, resized_pred])
+    img = cv2.hconcat([surround, resized_gt_map_img] + resized_pred)
 
     cams_img_path = osp.join(sample_path, 'Sample_vis.jpg')
-    cv2.imwrite(cams_img_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
+    cv2.imwrite(cams_img_path, img, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
 
 def main():
     project_path = "/home/sun/Bev/BeMapNet"
     anno_path = "/home/sun/Bev/BeMapNet/data/argoverse2/customer"
-    output_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_av2_effb0/2024-05-23T12:40:01"
+    output_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_av2_res50/2024-05-31"
     car_img = Image.open('/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png')
-
-    num_visual = 0
-    file_list = os.listdir(anno_path)
-    # print("num of files: {}".format(len(file_list)))
-    file_names = os.listdir(anno_path)
-    random_files = random.sample(file_names, 20)
-    # print(random_files)
-
 
     vis_path = os.path.join(output_path, 'visual')
     if not os.path.exists(vis_path):
         os.makedirs(vis_path, exist_ok=True)
 
-    file_list = ["315965566660183000.npz"]
-    for file_name in file_list:
-        # print("file_name: ", file_name)
+    num_visual = 10
+    index = 0
+
+    # file_list = os.listdir("/home/sun/Bev/BeMapNet/outputs/bemapnet_av2_res50/2024-05-31/evaluation/results")
+    # random_files = random.sample(file_list, 20)
+    # print(random_files)
+    # pdb.set_trace()
+    random_files = ['315971203560346000.npz', '315973857359772000.npz', '315969218659757000.npz', '315968122860049000.npz',
+                    '315971507059626000.npz', '315968455959361000.npz', '315968124260120000.npz', '315972311360079000.npz',
+                    '315971820560111000.npz', '315966150759587000.npz', '315978114660047000.npz', '315974605259566000.npz',
+                    '315976671659807000.npz', '315966550760005000.npz', '315976267159561000.npz', '315970261560293000.npz',
+                    '315968564059987000.npz', '315968475760377000.npz', '315969906559561000.npz', '315974253659562000.npz']
+    for file_name in tqdm(random_files):
         anno_data_path = osp.join(anno_path, file_name)
         anno_data = np.load(anno_data_path, allow_pickle=True)
         # ['input_dict', 'instance_mask', 'instance_mask8', 'semantic_mask', 'ctr_points', 'ego_points', 'map_vectors']
+
         anno_data_dict = {key: anno_data[key].tolist() for key in anno_data.files}
         input_dict = anno_data_dict["input_dict"]
         # ['timestamp', 'pts_filename', 'lidar_path', 'ego2global_translation', 'ego2global_rotation', 'log_id',
         # 'scene_token', 'camego2global', 'img_filename', 'lidar2img', 'camera_intrinsics', 'ego2cam', 'camera2ego',
         # 'cam_type', 'lidar2ego', 'ann_info']
+
         timestamp = input_dict["timestamp"]
 
         sample_path = os.path.join(vis_path, timestamp)
@@ -208,11 +209,11 @@ def main():
 
         all_eval = glob.glob(osp.join(output_path, 'evaluation*'))
         for path in all_eval:
-            pred_path = os.path.join(path, 'evaluation', 'results', timestamp)
+            pred_path = os.path.join(path, 'results', file_name)
             save_pred_visual(pred_path, sample_path)
 
         save_gt_visual(anno_data_dict, car_img, sample_path)
-        # concat(sample_path)
+        concat(sample_path)
         # if cam_img is not None:
         #     cv2.imshow("cam_img", cam_img)
         #     cv2.waitKey(0)
@@ -220,9 +221,10 @@ def main():
         # else:
         #     print("Error: Processed image for key  is None.")
 
-        num_visual = num_visual + 1
-        if num_visual >= 1:
-            break
+
+        # index += 1
+        # if index >= num_visual:
+        #     break
 
 
 if __name__ == "__main__":

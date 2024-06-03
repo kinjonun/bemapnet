@@ -133,7 +133,7 @@
   ```shell
   bash run.sh test bemapnet_nuscenes_swint ${checkpoint-path}
   bash run.sh test bemapnet_nuscenes_res50 outputs/bemapnet_nuscenes_res50/2024-05-03T10\:33\:35/dump_model/checkpoint_epoch_29.pth
-  
+  bash run.sh test bemapnet_av2_res50 
   ```
 
 - **c. Reproduce with one command**

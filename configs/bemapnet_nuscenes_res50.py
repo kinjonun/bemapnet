@@ -71,7 +71,7 @@ class EXPConfig:
             fpn_kwargs=dict(
                 conv_channels=(512, 1024, 2048),
                 fpn_cell_repeat=3,
-                fpn_num_filters=120,  # 128 -> 120  avoid OOM only
+                fpn_num_filters=128,  # 128 -> 120  avoid OOM only
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True, 
                 tgt_shape=(21, 49)
@@ -81,7 +81,7 @@ class EXPConfig:
             arch_name="transformer",
             net_kwargs=dict(
                 key='im_nek_features',
-                in_channels=600,               # 120*5   fpn_num_filters*5  (p3-p7_out)
+                in_channels=640,               # 120*5   fpn_num_filters*5  (p3-p7_out)
                 num_camera=6,
                 src_shape=(21, 49*6),
                 query_shape=(64, 32),

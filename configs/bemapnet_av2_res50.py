@@ -25,7 +25,7 @@ class EXPConfig:
     map_conf = dict(
         dataset_name="argoverse2",
         av2_root="data/argoverse2",
-        anno_root="data/argoverse2/customer",
+        anno_root="data/argoverse2/customer_",
         split_dir="assets/splits/argoverse2",
         num_classes=3,
         ego_size=(60, 30),
