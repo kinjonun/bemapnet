@@ -1,4 +1,5 @@
 import os
+import pdb
 import sys
 import argparse
 import datetime
@@ -176,7 +177,8 @@ class BeMapNetCli(BaseCli):
     @PyDecorator.overrides(BaseCli)
     def get_evaluator(self, callbacks=None):
         exp = self.exp
-
+        args = self.args
+        # pdb.set_trace()
         output_dir = self._get_exp_output_dir()
         self.exp.output_dir = output_dir
         logger = setup_logger(output_dir, distributed_rank=self.env.global_rank(), filename="eval.log")
@@ -187,5 +189,5 @@ class BeMapNetCli(BaseCli):
                 CheckPointLoader(self.args.ckpt),
             ]
 
-        evaluator = BeMapNetEvaluator(exp=exp, callbacks=callbacks, logger=logger)
+        evaluator = BeMapNetEvaluator(exp=exp, callbacks=callbacks, logger=logger, args=args)
         return evaluator

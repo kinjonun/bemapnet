@@ -3,7 +3,7 @@ import cv2
 import os.path as osp
 
 sample_dir = "/home/sun/Bev/BeMapNet/visual_bezier"
-gt_path = "/home/sun/Bev/BeMapNet/visual_bezier/GT.png"
+gt_path = "/visual_bezier/av2_images/GT.png"
 pred_path ="/home/sun/Bev/BeMapNet/visual_bezier/PRED_MAP_plot.png"
 surroud_path ="/home/sun/Bev/BeMapNet/visual_bezier/surroud_view.jpg"
 

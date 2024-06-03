@@ -57,7 +57,7 @@ class CrossAttentionLayer(nn.Module):
         super().__init__()
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.norm = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)                # 随机地将一部分神经元的输出设为零
         self.activation = get_activation_fn(activation)
         self.normalize_before = normalize_before
         self._reset_parameters()
@@ -232,7 +232,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
     def forward(self, x, mask_features, mask=None):
         # x is a list of multi-scale feature
-        assert len(x) == self.num_feature_levels
+        assert len(x) == self.num_feature_levels     # 只使用bev_decoder输出的最后一层
         src = []
         pos = []
         size_list = []
@@ -252,7 +252,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         _, bs, _ = src[0].shape
 
-        # QxNxC
+        # Q x N x C
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)    # [60, 1, 512]
         output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)          # [60, 1, 512]
 
@@ -261,9 +261,9 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         decoder_outputs = []
 
         # prediction heads on learnable query features
+        # dec_out([60, 512]), outputs_class([60, 2]), outputs_mask([60, 200, 100]),  attn_mask (8 ([60, 20000]) )
         dec_out, outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
-            output, mask_features, attn_mask_target_size=size_list[0]
-        )      # dec_out([60, 512]), outputs_class([60, 2]), outputs_mask([60, 200, 100]),  attn_mask (8 ([60, 20000]) )
+            output, mask_features, attn_mask_target_size=size_list[0])
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
         decoder_outputs.append(dec_out)
@@ -271,17 +271,19 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
-            # attention: cross-attention first
             output = self.transformer_cross_attention_layers[i](
                 output, src[level_index],
                 memory_mask=attn_mask,
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
                 pos=pos[level_index], query_pos=query_embed
             )                                                           # [60, 1, 512]
+
             output = self.transformer_self_attention_layers[i](
                 output, tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed
             )
+
             output = self.transformer_ffn_layers[i](output)             # [60, 1, 512]
+
             dec_out, outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
                 output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels]
             )   # dec_out ([60, 512]), outputs_class([60, 2]), outputs_mask([60, 200, 100]), attn_mask(8 ([60, 20000]) )
@@ -300,18 +302,18 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         return out
 
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
-        decoder_output = self.decoder_norm(output)
-        decoder_output = decoder_output.transpose(0, 1)   # (b, q, c')
-        outputs_class = self.class_embed(decoder_output)  # (b, q, c') -> (b, q, 2)
-        mask_embed = self.mask_embed(decoder_output)      # (b, q, c') -> (b, q, c)
+        decoder_output = self.decoder_norm(output)        # [60, 1, 512]
+        decoder_output = decoder_output.transpose(0, 1)   # (b, q, c')                    [1, 60, 512]
+        outputs_class = self.class_embed(decoder_output)  # (b, q, c') -> (b, q, 2)       [1, 60, 2]
+        mask_embed = self.mask_embed(decoder_output)      # (b, q, c') -> (b, q, c)       [1, 60, 512] x [1,512,200,100]
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)   # descriptors z X Fb -> Mz
 
         # NOTE: prediction is of higher-resolution
-        # [B, Q, H, W] -> [B, Q, H*W] -> [B, h, Q, H*W] -> [B*h, Q, HW]
+        # [B, Q, H, W] -> [B, Q, H*W] -> [B, h, Q, H*W] -> [B*h, Q, HW]      [1, 60, 200, 100]
         attn_mask = F.interpolate(outputs_mask, size=attn_mask_target_size, mode="bilinear", align_corners=False)
         # must use bool type
         # If a BoolTensor is provided, positions with ``True`` are not allowed to attend while ``False`` values will be unchanged.
         attn_mask = (attn_mask.sigmoid().flatten(2).unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1) < 0.5).bool()
-        attn_mask = attn_mask.detach()
+        attn_mask = attn_mask.detach()                    # [8, 60, 20000]    张量不会在反向传播过程中计算梯度
 
         return decoder_output, outputs_class, outputs_mask, attn_mask

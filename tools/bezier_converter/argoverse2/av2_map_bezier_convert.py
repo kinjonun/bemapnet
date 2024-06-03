@@ -356,7 +356,6 @@ class BezierConverter(object):
         ped_line = affinity.scale(ped_line, xfact=self.scale_width, yfact=self.scale_height, origin=(0, 0))
         # pdb.set_trace()
         map_masks, idx = self.mask_for_lines(ped_line, map_masks, self.thickness, idx, )
-        print(idx)
         for i in range(len(self.thickness)):
             map_masks_ret.append(np.flip(np.rot90(map_masks[i][None], k=1, axes=(1, 2)), axis=2)[0])
 
@@ -435,15 +434,15 @@ class BezierConverter(object):
 
 
 def main():
-    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_val"
+    save_dir = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_"
     ann_file = "/home/sun/MapTR/data/argoverse2/sensor/av2_map_infos_val.pkl"
     load_interval = 1
 
     data = mmcv.load(ann_file, file_format='pkl')
     data_infos = list(sorted(data['samples'], key=lambda e: e['timestamp']))
     data_infos = data_infos[::load_interval]
-    for j in tqdm(range(200, 201)):
-    # for j in tqdm(range(len(data_infos))):
+    # for j in tqdm(range(200, 201)):
+    for j in tqdm(range(len(data_infos))):
         data_info = data_infos[j]
         # print("timestamp", data_info["timestamp"])
 
@@ -472,9 +471,9 @@ def main():
         # bezier_convert.plot_ctr_points(ctr_points)
         # bezier_convert.plot_ego_points(ego_points)
         # bezier_convert.plot_map_points(map_vectors)
-        bezier_convert.plot_semantic_map(instance_masks)
+        # bezier_convert.plot_semantic_map(instance_masks)
         #
-        plt.show()
+        # plt.show()
 
 if __name__ == '__main__':
     main()

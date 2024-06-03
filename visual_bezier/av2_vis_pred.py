@@ -1,3 +1,5 @@
+import pdb
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -7,6 +9,7 @@ import os.path as osp
 from nuscenes import NuScenes
 import cv2
 from pathlib import Path
+import random
 
 caption_by_cam = {
     'ring_front_center': 'CAM_FRONT_CENTER',
@@ -18,7 +21,68 @@ caption_by_cam = {
     'ring_side_left': 'CAM_SIDE_LEFT',
 }
 
-def save_surroud(cams_dict, sample_dir, timestamp):
+
+def save_gt_visual(data_dict, car_img, sample_path):
+    plt.figure(figsize=(3, 6))
+    plt.ylim(-30, 30)
+    plt.xlim(-15, 15)
+    color = {0: 'g', 1: 'orange', 2: 'b', 3: 'r', 4: "c", }
+
+    ego_points = data_dict["ego_points"]
+    ctr_points = data_dict["ctr_points"]
+    for item in ctr_points:
+        pts = item['pts']
+        y = [-pt[0] + 15 for pt in pts]
+        x = [-pt[1] + 30 for pt in pts]
+        plt.scatter(y, x, c=color[item['type'] + 1])
+
+    for item in ego_points:
+        pts = item['pts']
+        for i in range(len(pts) - 1):
+            plt.plot([pts[i][1], pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type'] + 1])
+
+    plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
+    plt.text(-15, 31, 'GT', color='red', fontsize=12)
+    plt.tight_layout()
+
+    map_path = osp.join(sample_path, 'GT.png')
+    plt.savefig(map_path, bbox_inches='tight', format='png', dpi=1200)
+    plt.close()
+
+
+def save_pred_visual(pred_path, sample_path):
+    _, _, epoch_num = pred_path.split('/')[-4].rpartition('_')
+
+    data = np.load(pred_path, allow_pickle=True)
+    dt_res = data['dt_res'].tolist()
+    res = dict(dt_res)
+    points = res["map"]
+    label = res["pred_label"]
+
+    plt.figure(figsize=(3, 6))
+    plt.ylim(-30, 30)
+    plt.xlim(-15, 15)
+    color = {0: 'r', 1: 'orange', 2: 'b', 3: 'g', 4: "c", }
+    skla = 15 / 100
+    for i in range(1, len(res["map"])):
+        ins = np.int16(res["map"][i])
+        for j in range(len(ins) - 1):
+            x = ins[j][0]
+            y = 400 - ins[j][1]
+
+            plt.plot([(ins[j][0] - 100) * skla, (ins[j + 1][0] - 100) * skla],
+                     [(200 - ins[j][1]) * skla, (200 - ins[j + 1][1]) * skla], c=color[label[i]])
+
+    car_img = Image.open('/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png')
+    plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
+
+    plt.text(-15, 31, 'PRED_epoch_'+epoch_num, color='red', fontsize=12)
+    map_path = osp.join(sample_path, 'PRED_epoch_'+epoch_num+'.png')
+    plt.savefig(map_path, bbox_inches='tight', format='png', dpi=1200)
+    plt.close()
+
+
+def save_surround(cams_dict, sample_dir, timestamp):
     rendered_cams_dict = {}
     for key, cam_dict in cams_dict.items():
         cam_img = cv2.imread(cam_dict)
@@ -64,95 +128,91 @@ def save_surroud(cams_dict, sample_dir, timestamp):
     full_canvas = np.full((2972 + 1550, 8192, 3), color, dtype=np.uint8)
     full_canvas[:2972, :, :] = resized_first_row_canvas
     full_canvas[2972:, :, :] = second_row_canvas
-    cams_img_path = osp.join(sample_dir, 'surroud_view.jpg')
+    cams_img_path = osp.join(sample_dir, 'surround_view.jpg')
     cv2.imwrite(cams_img_path, full_canvas, [cv2.IMWRITE_JPEG_QUALITY, 70])
 
 def concat(sample_path):
     gt_path = osp.join(sample_path, 'GT.png')
-    # pred_path = osp.join(sample_path, 'PRED_MAP_plot.png')
-    # pretrained_path = osp.join(sample_path, 'pretrained_PRED.png')
-    surroud_path = osp.join(sample_path, 'surroud_view.jpg')
+    surround_path = osp.join(sample_path, 'surround_view.jpg')
+    pred_paths = glob.glob(osp.join(sample_path, 'PRED*'))
+
+    pred_images = []
+    for pred_path in pred_paths:
+        img = cv2.imread(pred_path)
+        pred_images.append(img)
+
     gt = cv2.imread(gt_path)
     # pred = cv2.imread(pred_path)
-    # pretrained =  cv2.imread(pretrained_path)
-    surroud = cv2.imread(surroud_path)
+    surround = cv2.imread(surround_path)
 
-    surroud_h, surroud_w, _ = surroud.shape
+    surround_h, surround_w, _ = surround.shape
     pred_h, pred_w, _ = gt.shape
-    resize_ratio = surroud_h / pred_h
+    resize_ratio = surround_h / pred_h
 
     resized_w = pred_w * resize_ratio
-    # resized_pred = cv2.resize(pred, (int(resized_w), int(surroud_h)))
-    resized_gt_map_img = cv2.resize(gt, (int(resized_w), int(surroud_h)))
-    # resized_pretrained = cv2.resize(pretrained, (int(resized_w), int(surroud_h)))
+    resized_pred = [cv2.resize(pred, (int(resized_w), int(surround_h))) for pred in pred_images]
+    resized_gt_map_img = cv2.resize(gt, (int(resized_w), int(surround_h)))
 
-    img = cv2.hconcat([surroud, resized_gt_map_img])
+    img = cv2.hconcat([surround, resized_gt_map_img])
+    # img = cv2.hconcat([surround, resized_gt_map_img, resized_pred])
 
     cams_img_path = osp.join(sample_path, 'Sample_vis.jpg')
     cv2.imwrite(cams_img_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
 
-def save_GT_visual(ego_points, ctr_points, car_img, sample_path):
-    plt.figure(figsize=(3, 6))
-    plt.ylim(-30, 30)
-    plt.xlim(-15, 15)
-    color = {0: 'g', 1: 'orange', 2: 'b', 3: 'r', 4: "c", 5: "m", 6: "k", 7: "y", 8: "deeppink"}
-
-    for item in ctr_points:
-        pts = item['pts']
-        y = [-pt[0] + 15 for pt in pts]
-        x = [-pt[1] + 30 for pt in pts]
-        plt.scatter(y, x, c=color[item['type']+1])
-
-    for item in ego_points:
-        pts = item['pts']
-        for i in range(len(pts) - 1):
-            plt.plot([pts[i][1], pts[i + 1][1]], [pts[i][0], pts[i + 1][0]], c=color[item['type']+1])
-
-    plt.imshow(car_img, extent=[-1.2, 1.2, -1.5, 1.5])
-    plt.text(-15, 31, 'GT', color='red', fontsize=12)
-    plt.tight_layout()
-
-    map_path = osp.join(sample_path, 'GT.png')
-    plt.savefig(map_path, bbox_inches='tight', format='png', dpi=1200)
-    plt.close()
-
 def main():
-    anno_path = "/home/sun/Bev/BeMapNet/data/argoverse2/customer_train"
-    # eval_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_nuscenes_res50/2024-05-03T10:33:35"
     project_path = "/home/sun/Bev/BeMapNet"
-    sample_path = "/home/sun/Bev/BeMapNet/visual_bezier"
-    # folder_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_nuscenes_res50/2024-05-03T10:33:35/evaluation/results"
+    anno_path = "/home/sun/Bev/BeMapNet/data/argoverse2/customer"
+    output_path = "/home/sun/Bev/BeMapNet/outputs/bemapnet_av2_effb0/2024-05-23T12:40:01"
     car_img = Image.open('/home/sun/Bev/BeMapNet/assets/figures/lidar_car.png')
-    color = {0: 'r', 1: 'orange', 2: 'b', 3: 'g', 4: "c", 5: "m", 6: "k", 7: "y", 8: "deeppink"}
-    pc_range = [-15.0, -30.0, -2.0, 15.0, 30.0, 2.0]
 
     num_visual = 0
     file_list = os.listdir(anno_path)
     # print("num of files: {}".format(len(file_list)))
+    file_names = os.listdir(anno_path)
+    random_files = random.sample(file_names, 20)
+    # print(random_files)
+
+
+    vis_path = os.path.join(output_path, 'visual')
+    if not os.path.exists(vis_path):
+        os.makedirs(vis_path, exist_ok=True)
 
     file_list = ["315965566660183000.npz"]
     for file_name in file_list:
         # print("file_name: ", file_name)
-        data_path = osp.join(anno_path, file_name)
-        data = np.load(data_path, allow_pickle=True)  # ['input_dict', 'instance_mask', 'instance_mask8', 'semantic_mask', 'ctr_points', 'ego_points', 'map_vectors']
-        data_dict = {key: data[key].tolist() for key in data.files}
-        input_dict = data_dict["input_dict"]  # ['timestamp', 'pts_filename', 'lidar_path', 'ego2global_translation', 'ego2global_rotation', 'log_id', 'scene_token', 'camego2global', 'img_filename', 'lidar2img', 'camera_intrinsics', 'ego2cam', 'camera2ego', 'cam_type', 'lidar2ego', 'ann_info']
+        anno_data_path = osp.join(anno_path, file_name)
+        anno_data = np.load(anno_data_path, allow_pickle=True)
+        # ['input_dict', 'instance_mask', 'instance_mask8', 'semantic_mask', 'ctr_points', 'ego_points', 'map_vectors']
+        anno_data_dict = {key: anno_data[key].tolist() for key in anno_data.files}
+        input_dict = anno_data_dict["input_dict"]
+        # ['timestamp', 'pts_filename', 'lidar_path', 'ego2global_translation', 'ego2global_rotation', 'log_id',
+        # 'scene_token', 'camego2global', 'img_filename', 'lidar2img', 'camera_intrinsics', 'ego2cam', 'camera2ego',
+        # 'cam_type', 'lidar2ego', 'ann_info']
         timestamp = input_dict["timestamp"]
-        ego_points = data_dict["ego_points"]
-        ctr_points = data_dict["ctr_points"]
 
-        img_filename =input_dict["img_filename"]  # ('data/argoverse2/sensor/val/201fe83b-7dd7-38f4-9d26-7b4a668638a9/sensors/cameras/ring_front_center/315969617449927219', '.jpg')
+        sample_path = os.path.join(vis_path, timestamp)
+        if not os.path.exists(sample_path):
+            os.makedirs(sample_path, exist_ok=True)
+
+        # save_images
+        img_filename = input_dict["img_filename"]
+        # ('data/argoverse2/sensor/val/201fe83b-768638a9/sensors/cameras/ring_front_center/315969617449927219', '.jpg')
         cams_dict = {}
         for img in img_filename:
             path = Path(img)
             img_name = path.parts[-2]
             img_path = osp.join(project_path, img)
             cams_dict[img_name] = img_path
-        save_surroud(cams_dict, sample_path, timestamp)
+        save_surround(cams_dict, sample_path, timestamp)
 
-        save_GT_visual(ego_points, ctr_points, car_img, sample_path)
-        concat(sample_path)
+        all_eval = glob.glob(osp.join(output_path, 'evaluation*'))
+        for path in all_eval:
+            pred_path = os.path.join(path, 'evaluation', 'results', timestamp)
+            save_pred_visual(pred_path, sample_path)
+
+        save_gt_visual(anno_data_dict, car_img, sample_path)
+        # concat(sample_path)
         # if cam_img is not None:
         #     cv2.imshow("cam_img", cam_img)
         #     cv2.waitKey(0)
@@ -160,11 +220,10 @@ def main():
         # else:
         #     print("Error: Processed image for key  is None.")
 
-
         num_visual = num_visual + 1
         if num_visual >= 1:
             break
 
+
 if __name__ == "__main__":
     main()
-

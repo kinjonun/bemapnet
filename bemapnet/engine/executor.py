@@ -1,6 +1,6 @@
 import os
 import pdb
-
+import re
 import torch
 from tqdm import tqdm
 from typing import Sequence
@@ -52,7 +52,7 @@ class Callback:
 
 
 class BaseExecutor:
-    def __init__(self, exp: BaseExp, callbacks: Sequence["Callback"], logger=None) -> None:
+    def __init__(self, exp: BaseExp, callbacks: Sequence["Callback"], logger=None, ) -> None:
         self.exp = exp
         self.logger = logger
         self.callbacks = callbacks
@@ -134,7 +134,7 @@ class Trainer(BaseExecutor):
                 self.train_iter = iter(self.train_dataloader)
                 data = next(self.train_iter)
             # pdb.set_trace()
-            # data ['images', 'targets', 'extrinsic','intrinsic', 'ida_mats','extra_infos']
+            # data ['images', 'targets', 'extrinsic','intrinsic', 'ida_mats', 'extra_infos']
             # data["targets"]: ['masks','points','labels']  masks[1, 3, 400, 200] points[1, 40, 22, 2], labels[1, 40, 3]
             self.train_step(data, step)
         if self.evaluator is not None:
@@ -191,16 +191,20 @@ class Trainer(BaseExecutor):
 
 
 class BeMapNetEvaluator(BaseExecutor):
-    def __init__(self, exp: BaseExp, callbacks: Sequence["Callback"], logger=None) -> None:
+    def __init__(self, exp: BaseExp, callbacks: Sequence["Callback"], logger=None, args=None) -> None:
         super(BeMapNetEvaluator, self).__init__(exp, callbacks, logger)
+        self.args = args
 
     def eval(self, ckpt_name=None):
+        checkpoint_name = self.args.ckpt.split('/')[-1]
+        epoch_num = int(re.search(r'(\d+)', checkpoint_name).group(1))
 
         exp = self.exp
         val_iter = iter(self.val_dataloader)
 
         self._invoke_callback("before_eval")
 
+        # pdb.set_trace()
         if ckpt_name is not None:
             if get_rank() == 0:
                 self.logger.info("Eval with best checkpoint!")

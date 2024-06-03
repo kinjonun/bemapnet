@@ -110,7 +110,7 @@ class EXPConfig:
                 decoder_ids=[0, 1, 2, 3, 4, 5],
                 in_channels=512,
                 tgt_shape=(200, 100),
-                num_feature_levels=1,
+                num_feature_levels=1,                 # 只使用bev_decoder输出的最后一层
                 mask_classification=True,
                 num_classes=1,
                 hidden_dim=512,

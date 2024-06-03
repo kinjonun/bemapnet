@@ -25,7 +25,7 @@ class EXPConfig:
     map_conf = dict(
         dataset_name="argoverse2",
         av2_root="data/argoverse2",
-        anno_root="data/argoverse2/customer_train",
+        anno_root="data/argoverse2/customer",
         split_dir="assets/splits/argoverse2",
         num_classes=3,
         ego_size=(60, 30),
@@ -83,7 +83,7 @@ class EXPConfig:
                 key='im_nek_features',
                 in_channels=600,
                 num_camera=7,
-                src_shape=(21, 49*7),         # debug
+                src_shape=(21, 49*7),
                 query_shape=(64, 32),
                 d_model=512,
                 nhead=8,
@@ -312,7 +312,9 @@ class Exp(BaseExp):
             results, dt_masks, _ = self.model.module.post_processor(outputs["outputs"])
         self.save_results(batch["extra_infos"]["token"], results, dt_masks)
 
+    # def save_results(self, tokens, results, dt_masks, epoch_num):
     def save_results(self, tokens, results, dt_masks):
+
         if self.evaluation_save_dir is None:
             self.evaluation_save_dir = os.path.join(self.output_dir, "evaluation", "results")
             if not os.path.exists(self.evaluation_save_dir):
