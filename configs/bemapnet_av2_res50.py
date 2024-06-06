@@ -19,8 +19,9 @@ class EXPConfig:
 
     CLASS_NAMES = ["lane_divider", "ped_crossing", "drivable_area"]
     IMAGE_SHAPE = (1550, 2048)       # debug
-    # ida_conf = dict(resize_dims=(896, 512), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)   # memory 13442
-    ida_conf = dict(resize_dims=(1536, 852), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)    # 15474
+    # ida_conf = dict(resize_dims=(640, 332), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)   # memory 13684
+    ida_conf = dict(resize_dims=(896, 512), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)   # memory 14244
+    # ida_conf = dict(resize_dims=(1536, 852), up_crop_ratio=0.25, rand_flip=True, rot_lim=False)    # 15474
     INPUT_SHAPE = [int(ida_conf["resize_dims"][1] * (1 - ida_conf["up_crop_ratio"])), int(ida_conf["resize_dims"][0])]
 
     map_conf = dict(
@@ -101,8 +102,9 @@ class EXPConfig:
                 ipm_proj_conf=dict(
                     map_size=map_conf["map_size"],
                     map_resolution=map_conf["map_resolution"],
-                    # input_shape=(512, 896)
-                    input_shape=(852, 1536)
+                    # input_shape=(332, 640)
+                    input_shape=(512, 896)
+                    # input_shape=(852, 1536)
                 )
             ),
         ),

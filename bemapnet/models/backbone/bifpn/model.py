@@ -192,9 +192,9 @@ class BiFPNLayer(nn.Module):
     def _forward_fast_attention(self, inputs):
         if self.first_time:
             p3, p4, p5 = inputs             # [6, 512, 48, 112]; [6, 1024, 24, 56];  [6, 2048, 12, 28] for size(896,512)
-                                            # [6, 512, 36, 80];  [6, 1024, 18, 40];  [6, 2048, 9, 20] for (640, 384)
-            p6_in = self.p5_to_p6(p5)                # [6, 120, 6, 14]      [6, 120, 5, 10];
-            p7_in = self.p6_to_p7(p6_in)             # [6, 120, 3, 7]       [6, 120, 3, 5]
+                            # [6, 512, 36, 80];  [6, 1024, 18, 40];  [6, 2048, 9, 20]  [6, 120, 5, 10] [6, 120, 3, 5]
+            p6_in = self.p5_to_p6(p5)                # [6, 120, 6, 14]
+            p7_in = self.p6_to_p7(p6_in)             # [6, 120, 3, 7]
 
             p3_in = self.p3_down_channel(p3)         # [6, 120, 48, 112]        [6, 120, 36, 80]
             p4_in = self.p4_down_channel(p4)         # [6, 120, 24, 56]
