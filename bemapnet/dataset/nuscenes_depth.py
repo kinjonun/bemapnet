@@ -10,8 +10,9 @@ from nuscenes.utils.data_classes import Box, LidarPointCloud
 from nuscenes.utils.geometry_utils import view_points
 from pyquaternion import Quaternion
 from nuscenes import NuScenes
+import matplotlib.pyplot as plt
 
-def depth_transform(cam_depth, resize, resize_dims, crop, flip, rotate):
+def depth_transform(cam_depth, img_shape, resize_dims, crop, flip, rotate):   # (900, 1600)
     """Transform depth based on ida augmentation configuration.
 
     Args:
@@ -26,26 +27,28 @@ def depth_transform(cam_depth, resize, resize_dims, crop, flip, rotate):
         np array: [h/down_ratio, w/down_ratio, d]
     """
     # pdb.set_trace()
-    H, W = resize_dims     # (256, 704)
-    cam_depth[:, :2] = cam_depth[:, :2] * resize       # (3379, 3)
+    resize_dims = np.array(resize_dims)[::-1]
+    H, W = resize_dims            # (512, 896)
+    resize_h = H /img_shape[0]
+    resize_w = W /img_shape[1]
+    cam_depth[:, 0] = cam_depth[:, 0] * resize_w       # (3379, 3)
+    cam_depth[:, 1] = cam_depth[:, 1] * resize_h       # (3379, 3)
     cam_depth[:, 0] -= crop[0]
     cam_depth[:, 1] -= crop[1]                         # (3379, 3)
     if flip:
         cam_depth[:, 0] = resize_dims[1] - cam_depth[:, 0]
 
-    cam_depth[:, 0] -= W / 2.0
+    cam_depth[:, 0] -= W / 2.0           # 移动原点到中心便于做旋转
     cam_depth[:, 1] -= H / 2.0
-
     h = rotate / 180 * np.pi
     rot_matrix = [[np.cos(h), np.sin(h)], [-np.sin(h), np.cos(h)],]
     cam_depth[:, :2] = np.matmul(rot_matrix, cam_depth[:, :2].T).T
-
     cam_depth[:, 0] += W / 2.0
     cam_depth[:, 1] += H / 2.0
 
     depth_coords = cam_depth[:, :2].astype(np.int16)
 
-    depth_map = np.zeros(resize_dims)
+    depth_map = np.zeros((crop[3]-crop[1], crop[2]-crop[0]))    # [384, 896]
     valid_mask = ((depth_coords[:, 1] < resize_dims[0]) & (depth_coords[:, 0] < resize_dims[1])
                   & (depth_coords[:, 1] >= 0) & (depth_coords[:, 0] >= 0))
     depth_map[depth_coords[valid_mask, 1], depth_coords[valid_mask, 0]] = cam_depth[valid_mask, 2]
@@ -87,9 +90,11 @@ def map_pointcloud_to_image(lidar_points, img, lidar_calibrated_sensor, lidar_eg
     mask = np.ones(depths.shape[0], dtype=bool)
     mask = np.logical_and(mask, depths > min_dist)
     mask = np.logical_and(mask, points[0, :] > 1)
-    mask = np.logical_and(mask, points[0, :] < img.size[0] - 1)      # 1600
+    # mask = np.logical_and(mask, points[0, :] < img.size[0] - 1)      # 1600
+    mask = np.logical_and(mask, points[0, :] < img[1] - 1)
     mask = np.logical_and(mask, points[1, :] > 1)
-    mask = np.logical_and(mask, points[1, :] < img.size[1] - 1)      # 900
+    # mask = np.logical_and(mask, points[1, :] < img.size[1] - 1)      # 900
+    mask = np.logical_and(mask, points[1, :] < img[0] - 1)
     points = points[:, mask]         # (3, 3379)
     coloring = coloring[mask]        # (3379,)
     return points, coloring
@@ -111,55 +116,67 @@ class NuScenesMapDatasetDepth(Dataset):
         self.max_pieces = bezier_conf["max_pieces"]
         self.max_instances = bezier_conf["max_instances"]
         self.split_mode = 'train' if data_split == "training" else 'val'
-        split_path = os.path.join(self.split_dir, f'{self.split_mode}.txt')
+        # split_path = os.path.join(self.split_dir, f'{self.split_mode}.txt')
+        split_path = os.path.join('/home/sun/Bev/BeMapNet/assets/splits/nuscenes/ein.txt')
         self.tokens = [token.strip() for token in open(split_path).readlines()]
         self.transforms = transforms
-        self.nusc = NuScenes(version='v1.0-trainval', dataroot="./data/nuscenes", verbose=True)
+        self.return_depth = True
 
     def __getitem__(self, idx: int):
         token = self.tokens[idx]
         sample = np.load(os.path.join(self.anno_root, f'{token}.npz'), allow_pickle=True)
-        resize_dims, crop, flip, rotate = self.sample_ida_augmentation()
-        images, ida_mats = [], []
-        nusc_sample = self.nusc.get('sample', token)
+        resize_dims, crop, flip, rotate = self.sample_ida_augmentation()   # (896, 512), (0, 128, 896, 512),
+        # pdb.set_trace()
+        images, ida_mats, lidar_depth = [], [], []
+        lidar_filename = np.array(sample['lidar_filename']).tolist()
+        lidar_calibrated_sensor = dict(
+            rotation=sample['lidar_rot'],
+            translation=sample['lidar_tran'])
+        lidar_ego_pose = dict(
+            rotation=sample['lidar_ego_pose_rot'],
+            translation=sample['lidar_ego_pose_tran'])
 
-        lidar_infos = self.nusc.get('sample_data', nusc_sample['data']["LIDAR_TOP"])
-        lidar_ego_pose = self.nusc.get('ego_pose', lidar_infos["ego_pose_token"])
-        lidar_ego_pose_rotation = lidar_ego_pose["rotation"]
-        lidar_ego_pose_translation = lidar_ego_pose["translation"]
-        lidar_calibrated_sensor = self.nusc.get('calibrated_sensor', lidar_infos["calibrated_sensor_token"])
-        lidar_calibrated_sensor_rotation = lidar_calibrated_sensor["rotation"]
-        lidar_calibrated_sensor_translation = lidar_calibrated_sensor["translation"]
-        lidar_filename = lidar_infos["filename"]
-        lidar_info = dict(
-            lidar_ego_pose_rotation=lidar_ego_pose_rotation,
-            lidar_ego_pose_translation=lidar_ego_pose_translation,
-            lidar_calibrated_sensor_translation=lidar_calibrated_sensor_translation,
-            lidar_calibrated_sensor_rotation=lidar_calibrated_sensor_rotation,
-            lidar_filename=lidar_filename,
-        )
         lidar_points = np.fromfile(os.path.join(self.nusc_root, lidar_filename), dtype=np.float32,
                                    count=-1).reshape(-1, 5)[..., :4]
 
-        for im_view in self.img_key_list:
-            cam_infos = self.nusc.get('sample_data', nusc_sample['data'][im_view])
-            cam_ego_pose = self.nusc.get('ego_pose', cam_infos["ego_pose_token"])
-            cam_ego_pose_rotation = cam_ego_pose["rotation"]
-            cam_ego_pose_translation = cam_ego_pose["translation"]
-
-
         # pdb.set_trace()
-        for im_view in self.img_key_list:
-            for im_path in sample['image_paths']:
-                if im_path.startswith(f'samples/{im_view}/'):
-                    im_path = os.path.join(self.nusc_root, im_path)
-                    img = skimage_io.imread(im_path)
-                    img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
-                    images.append(img)
-                    ida_mats.append(ida_mat)
+        for i in range(len(sample['image_paths'])):
+            im_path = sample['image_paths'][i]
+            im_path = os.path.join(self.nusc_root, im_path)
+            img = skimage_io.imread(im_path)
+            cam_calibrated_sensor = dict(
+                rotation=sample['rots'][i],
+                translation=sample['trans'][i],
+                camera_intrinsic=sample['intrins'][i])
+            cam_ego_pose = dict(
+                rotation=sample['cam_ego_pose_rots'][i],
+                translation=sample['cam_ego_pose_trans'][i])
+            # pdb.set_trace()
+            if self.return_depth:
+                pts_img, depth = map_pointcloud_to_image(lidar_points.copy(), img.shape[:2], lidar_calibrated_sensor.copy(),
+                                                     lidar_ego_pose.copy(), cam_calibrated_sensor, cam_ego_pose)
+                point_depth = np.concatenate([pts_img[:2, :].T, depth[:, None]], axis=1).astype(np.float32)
+                point_depth_augmented = depth_transform(point_depth, img.shape[:2], resize_dims, crop, flip, rotate)
+                lidar_depth.append(point_depth_augmented)
+
+            img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
+            images.append(img)
+            ida_mats.append(ida_mat)
+
+
+
+        # plt.imshow(lidar_depth[0], cmap='hot')
+        # plt.colorbar()  # 添加颜色条
+        # plt.show()  # 显示图片
+        # pdb.set_trace()
+
+        rots = []
+        for rot in sample['rots']:
+            extrin = Quaternion(rot).rotation_matrix
+            rots.append(extrin)
 
         extrinsic = np.stack([np.eye(4) for _ in range(sample["trans"].shape[0])], axis=0)
-        extrinsic[:, :3, :3] = sample["rots"]
+        extrinsic[:, :3, :3] = np.array(rots)
         extrinsic[:, :3, 3] = sample["trans"]
         intrinsic = sample['intrins']
         # image_paths = torch.tensor(sample['image_paths'].tolist())
@@ -191,10 +208,12 @@ class NuScenesMapDatasetDepth(Dataset):
             images=images, targets=dict(masks=masks, points=ctr_points, labels=ins_labels),
             extrinsic=np.stack(extrinsic), intrinsic=np.stack(intrinsic), ida_mats=np.stack(ida_mats),
             extra_infos=dict(token=token, img_key_list=self.img_key_list, map_size=self.ego_size, do_flip=flip),
-            lidar_infos=lidar_info,
         )
         if self.transforms is not None:
             item = self.transforms(item)
+
+        if self.return_depth:
+            item['lidar_depth'] = lidar_depth
         return item
 
     def __len__(self):
@@ -215,11 +234,11 @@ class NuScenesMapDatasetDepth(Dataset):
                 rotate_ida = np.random.uniform(*self.ida_conf["rot_lim"])
         return resize_dims, crop, flip, rotate_ida
 
-    def img_transform(self, img, resize_dims, crop, flip, rotate):
+    def img_transform(self, img, resize_dims, crop, flip, rotate):      # (896, 512), (0, 128, 896, 512)
         img = Image.fromarray(img)
         ida_rot = torch.eye(2)
         ida_tran = torch.zeros(2)
-        W, H = img.size
+        w, h = img.size
         img = img.resize(resize_dims)
         img = img.crop(crop)
         if flip:
@@ -227,7 +246,7 @@ class NuScenesMapDatasetDepth(Dataset):
         img = img.rotate(rotate)
 
         # post-homography transformation
-        scales = torch.tensor([resize_dims[0] / W, resize_dims[1] / H])
+        scales = torch.tensor([resize_dims[0] / w, resize_dims[1] / h])
         ida_rot *= torch.Tensor(scales)
         ida_tran -= torch.Tensor(crop[:2])
         if flip:

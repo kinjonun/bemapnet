@@ -32,21 +32,38 @@ class NuScenesDataset(Dataset):
         ego_pose = self.nusc.get('ego_pose',
                                  self.nusc.get('sample_data', record['data']['LIDAR_TOP'])['ego_pose_token'])
         vectors = self.vector_map.gen_vectorized_samples(location, ego_pose['translation'], ego_pose['rotation'])
-        imgs, trans, rots, intrins = self.get_data_info(record)
+        imgs, trans, rots, intrins, cam_ego_pose_trans, cam_ego_pose_rots, lidar_filename, lidar_tran, lidar_rot, \
+            lidar_ego_pose_tran, lidar_ego_pose_rot = self.get_data_info(record)
+
         # import pdb
         # pdb.set_trace()
         return imgs, np.stack(trans), np.stack(rots), np.stack(intrins), vectors
 
     def get_data_info(self, record):
         imgs, trans, rots, intrins = [], [], [], []
+        imgs, trans, rots, intrins, cam_ego_pose_trans, cam_ego_pose_rots = [], [], [], [], [], []
+        lidar_info = self.nusc.get('sample_data', record['data']['LIDAR_TOP'])
+        lidar_filename = lidar_info['filename']
+        lidar_sens = self.nusc.get('calibrated_sensor', lidar_info['calibrated_sensor_token'])
+        lidar_tran = lidar_sens['translation']
+        lidar_rot = lidar_sens['rotation']
+        lidar_ego_pose = self.nusc.get('ego_pose', lidar_info['ego_pose_token'])
+        lidar_ego_pose_tran = lidar_ego_pose['translation']
+        lidar_ego_pose_rot = lidar_ego_pose['rotation']
+
         for cam in ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']:
             samp = self.nusc.get('sample_data', record['data'][cam])
             imgs.append(samp['filename'])
             sens = self.nusc.get('calibrated_sensor', samp['calibrated_sensor_token'])
             trans.append(sens['translation'])
-            rots.append(Quaternion(sens['rotation']).rotation_matrix)
+            rots.append(sens['rotation'])
             intrins.append(sens['camera_intrinsic'])
-        return imgs, trans, rots, intrins
+            cam_ego_pose = self.nusc.get('ego_pose', samp['ego_pose_token'])
+            cam_ego_pose_trans.append(cam_ego_pose['translation'])
+            cam_ego_pose_rots.append(cam_ego_pose['rotation'])
+
+        return imgs, trans, rots, intrins, cam_ego_pose_trans, cam_ego_pose_rots, lidar_filename, lidar_tran, lidar_rot, \
+            lidar_ego_pose_tran, lidar_ego_pose_rot
 
 
 class NuScenesSemanticDataset(NuScenesDataset):
@@ -58,18 +75,21 @@ class NuScenesSemanticDataset(NuScenesDataset):
         record = self.nusc.sample[idx]
         location = self.nusc.get('log', self.nusc.get('scene', record['scene_token'])['log_token'])['location']
         ego_pose = self.nusc.get('ego_pose', self.nusc.get('sample_data', record['data']['LIDAR_TOP'])['ego_pose_token'])
-        import pdb
+
         # pdb.set_trace()
         vectors = self.vector_map.gen_vectorized_samples(location, ego_pose['translation'], ego_pose['rotation'])
-        # import pdb
-        # pdb.set_trace()
-        imgs, trans, rots, intrins = self.get_data_info(record)
+
+        imgs, trans, rots, intrins, cam_ego_pose_trans, cam_ego_pose_rots, lidar_filename, lidar_tran, lidar_rot, \
+            lidar_ego_pose_tran, lidar_ego_pose_rot = self.get_data_info(record)
+
         semantic_masks, instance_masks, instance_vec_points, instance_ctr_points = \
             self.raster_map.convert_vec_to_mask(vectors)
-        import pdb
+
         # pdb.set_trace()
-        return imgs, np.stack(trans), np.stack(rots), np.stack(intrins), semantic_masks, instance_masks, \
-               vectors, instance_vec_points, instance_ctr_points
+        return imgs, np.stack(trans), np.stack(rots), np.stack(intrins), semantic_masks, instance_masks, vectors, \
+            instance_vec_points, instance_ctr_points, np.stack(cam_ego_pose_trans), np.stack(cam_ego_pose_rots), \
+            lidar_filename, np.stack(lidar_tran), np.stack(lidar_rot), np.stack(lidar_ego_pose_tran), np.stack(lidar_ego_pose_rot)
+
 
 
 def main():
@@ -99,7 +119,9 @@ def main():
             np.savez_compressed(
                 file_path, image_paths=np.array(item[0]), trans=item[1], rots=item[2], intrins=item[3],
                 semantic_mask=item[4][0], instance_mask=item[5][0], instance_mask8=item[5][1],
-                ego_vectors=item[6], map_vectors=item[7], ctr_points=item[8]
+                ego_vectors=item[6], map_vectors=item[7], ctr_points=item[8], cam_ego_pose_trans=item[9],
+                cam_ego_pose_rots=item[10], lidar_filename=item[11], lidar_tran=item[12], lidar_rot=item[13],
+                lidar_ego_pose_tran=item[14], lidar_ego_pose_rot=item[15],
             )
 
 
