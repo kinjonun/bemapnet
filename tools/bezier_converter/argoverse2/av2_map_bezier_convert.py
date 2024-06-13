@@ -445,7 +445,7 @@ def main():
     for j in tqdm(range(len(data_infos))):
         data_info = data_infos[j]
         # print("timestamp", data_info["timestamp"])
-
+        # pdb.set_trace()
         bezier_convert = BezierConverter(data_info)
         input_dict = bezier_convert.get_data_info(data_info)
         ctr_points, ego_points, map_vectors, instance_masks = bezier_convert.convert()

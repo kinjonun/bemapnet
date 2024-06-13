@@ -12,7 +12,7 @@ def av2_npz():
     file_names = os.listdir(folder_path)
     # random_file = random.choice(file_names)
     random_file = '315970547759868000.npz'
-    print("av2_npz:", random_file)
+    # print("av2_npz:", random_file)
 
     file_path = os.path.join(folder_path, random_file)
     data = np.load(file_path, allow_pickle=True)
@@ -37,13 +37,15 @@ def av2_npz():
     return ctr_points, ego_points, instance_mask8, timestamp
 
 def nuscenes_npz():
-    folder_path = '/home/sun/Bev/BeMapNet/data/nuscenes/customer/bemapnet'
+    folder_path = '/home/sun/Bev/BeMapNet/data/nuscenes/customer/bemapnet_lidar'
     file_names = os.listdir(folder_path)
-    random_file = random.choice(file_names)
-    print("nuscenes_npz:", random_file)
+    # random_file = random.choice(file_names)
+    # print("nuscenes_npz:", random_file)
+    random_file = "1c05e9f2e6364d2c8ceb0ff2f0f72fdb.npz"
 
     file_path = os.path.join(folder_path, random_file)
     data = np.load(file_path, allow_pickle=True)
+    # pdb.set_trace()
     image_paths = data['image_paths']
     trans = data['trans']
     rots = data['rots']
@@ -84,17 +86,17 @@ def plot_instance_mask(instance_mask8, timestamp):
 
 av2_ctr_points, av2_ego_points, av2_instance_mask8, av2_timestamp = av2_npz()
 cross = av2_instance_mask8[2]
-for i in range(len(cross)):
-    for j in range(len(cross[i])):
-        aa = np.int16(cross[i][j])
-        if aa > 0:
-            print(aa)
+# for i in range(len(cross)):
+#     for j in range(len(cross[i])):
+#         aa = np.int16(cross[i][j])
+#         if aa > 0:
+#             print(aa)
         # pdb.set_trace()
 
-plot_ctr_points(av2_ctr_points, av2_ego_points, av2_timestamp)
-plot_instance_mask(av2_instance_mask8, av2_timestamp)
+# plot_ctr_points(av2_ctr_points, av2_ego_points, av2_timestamp)
+# plot_instance_mask(av2_instance_mask8, av2_timestamp)
 #
-# nus_ctr_points, nus_ego_points, nus_instance_mask8, nus_timestamp = nuscenes_npz()
+nus_ctr_points, nus_ego_points, nus_instance_mask8, nus_timestamp = nuscenes_npz()
 # plot_ctr_points(nus_ctr_points, nus_ego_points, nus_timestamp)
 # plot_instance_mask(nus_instance_mask8, nus_timestamp)
 

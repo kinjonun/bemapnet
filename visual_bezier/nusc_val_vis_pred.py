@@ -20,7 +20,7 @@ from bemapnet.engine.callbacks import TensorBoardMonitor, TextMonitor, ClipGrad
 from bemapnet.models.network import BeMapNet
 from bemapnet.engine.core import BeMapNetCli
 from bemapnet.engine.experiment import BaseExp
-from bemapnet.dataset.nuscenes import NuScenesMapDataset
+from bemapnet.dataset.nusc_dataset import NuScenesMapDataset
 from bemapnet.dataset.transform import Normalize, ToTensor
 from bemapnet.utils.misc import get_param_groups, is_distributed
 from PIL import Image
