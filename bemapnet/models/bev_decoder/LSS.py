@@ -10,9 +10,411 @@ from torch.utils.checkpoint import checkpoint
 from bemapnet.models.utils.position_encoding import PositionEmbeddingSine, PositionEmbeddingLearned
 from bemapnet.models.utils.position_encoding import PositionEmbeddingIPM, PositionEmbeddingTgt
 from mmcv.cnn import build_conv_layer
-from mmdet.models.backbones.resnet import BasicBlock, Bottleneck
+from mmdet.models.backbones.resnet import BasicBlock
+from mmdet3d.ops import bev_pool
+from mmcv.runner import force_fp32, auto_fp16
+from torch.cuda.amp.autocast_mode import autocast
 
-class Transformer(nn.Module):
+
+def gen_dx_bx(xbound, ybound, zbound):
+    dx = torch.Tensor([row[2] for row in [xbound, ybound, zbound]])
+    bx = torch.Tensor([row[0] + row[2] / 2.0 for row in [xbound, ybound, zbound]])
+    nx = torch.Tensor(
+        [int((row[1] - row[0]) / row[2]) for row in [xbound, ybound, zbound]]
+    )
+    return dx, bx, nx
+
+
+
+class BaseTransform(BaseModule):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            feat_down_sample,
+            pc_range,
+            voxel_size,
+            dbound,
+    ):
+        super(BaseTransform, self).__init__()
+        self.in_channels = in_channels
+        self.feat_down_sample = feat_down_sample
+        # self.image_size = image_size
+        # self.feature_size = feature_size
+        self.xbound = [pc_range[0], pc_range[3], voxel_size[0]]
+        self.ybound = [pc_range[1], pc_range[4], voxel_size[1]]
+        self.zbound = [pc_range[2], pc_range[5], voxel_size[2]]
+        self.dbound = dbound
+
+        dx, bx, nx = gen_dx_bx(self.xbound, self.ybound, self.zbound)
+        self.dx = nn.Parameter(dx, requires_grad=False)
+        self.bx = nn.Parameter(bx, requires_grad=False)
+        self.nx = nn.Parameter(nx, requires_grad=False)
+
+        self.C = out_channels
+        self.frustum = None
+        self.D = int((dbound[1] - dbound[0]) / dbound[2])
+        # self.frustum = self.create_frustum()
+        # self.D = self.frustum.shape[0]
+        self.fp16_enabled = False
+
+    @force_fp32()
+    def create_frustum(self, fH, fW, img_metas):
+        # iH, iW = self.image_size
+        # fH, fW = self.feature_size
+        iH = img_metas[0]['img_shape'][0][0]
+        iW = img_metas[0]['img_shape'][0][1]
+        assert iH // self.feat_down_sample == fH
+        # import pdb;pdb.set_trace()
+        ds = (
+            torch.arange(*self.dbound, dtype=torch.float)
+            .view(-1, 1, 1)
+            .expand(-1, fH, fW)
+        )
+        D, _, _ = ds.shape
+
+        xs = (
+            torch.linspace(0, iW - 1, fW, dtype=torch.float)
+            .view(1, 1, fW)
+            .expand(D, fH, fW)
+        )
+        ys = (
+            torch.linspace(0, iH - 1, fH, dtype=torch.float)
+            .view(1, fH, 1)
+            .expand(D, fH, fW)
+        )
+
+        frustum = torch.stack((xs, ys, ds), -1)
+        # return nn.Parameter(frustum, requires_grad=False)
+        return frustum
+
+    @force_fp32()
+    def get_geometry_v1(
+            self,
+            fH,
+            fW,
+            rots,
+            trans,
+            intrins,
+            post_rots,
+            post_trans,
+            lidar2ego_rots,
+            lidar2ego_trans,
+            img_metas,
+            **kwargs,
+    ):
+        B, N, _ = trans.shape
+        device = trans.device
+        if self.frustum == None:
+            self.frustum = self.create_frustum(fH, fW, img_metas)
+            self.frustum = self.frustum.to(device)
+            # self.D = self.frustum.shape[0]
+
+        # undo post-transformation
+        # B x N x D x H x W x 3
+        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
+        points = (
+            torch.inverse(post_rots.to("cpu")).cuda()
+            .view(B, N, 1, 1, 1, 3, 3)
+            .matmul(points.unsqueeze(-1))
+        )
+        # cam_to_ego
+        points = torch.cat(
+            (
+                points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
+                points[:, :, :, :, :, 2:3],
+            ),
+            5,
+        )
+        combine = rots.matmul(torch.inverse(intrins.to("cpu")).cuda())
+        points = combine.view(B, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
+        points += trans.view(B, N, 1, 1, 1, 3)
+        # ego_to_lidar
+        points -= lidar2ego_trans.view(B, 1, 1, 1, 1, 3)
+        points = (
+            torch.inverse(lidar2ego_rots.to("cpu")).cuda()
+            .view(B, 1, 1, 1, 1, 3, 3)
+            .matmul(points.unsqueeze(-1))
+            .squeeze(-1)
+        )
+
+        if "extra_rots" in kwargs:
+            extra_rots = kwargs["extra_rots"]
+            points = (
+                extra_rots.view(B, 1, 1, 1, 1, 3, 3)
+                .repeat(1, N, 1, 1, 1, 1, 1)
+                .matmul(points.unsqueeze(-1))
+                .squeeze(-1)
+            )
+        if "extra_trans" in kwargs:
+            extra_trans = kwargs["extra_trans"]
+            points += extra_trans.view(B, 1, 1, 1, 1, 3).repeat(1, N, 1, 1, 1, 1)
+
+        return points
+
+    @force_fp32()
+    def get_geometry(
+            self,
+            fH,
+            fW,
+            lidar2img,
+            img_metas,
+    ):
+        B, N, _, _ = lidar2img.shape
+        device = lidar2img.device
+        # import pdb;pdb.set_trace()
+        if self.frustum == None:
+            self.frustum = self.create_frustum(fH, fW, img_metas)
+            self.frustum = self.frustum.to(device)
+            # self.D = self.frustum.shape[0]
+
+        points = self.frustum.view(1, 1, self.D, fH, fW, 3) \
+            .repeat(B, N, 1, 1, 1, 1)
+        lidar2img = lidar2img.view(B, N, 1, 1, 1, 4, 4)
+        # img2lidar = torch.inverse(lidar2img)
+        points = torch.cat(
+            (points, torch.ones_like(points[..., :1])), -1)
+        points = torch.linalg.solve(lidar2img.to(torch.float32),
+                                    points.unsqueeze(-1).to(torch.float32)).squeeze(-1)
+        # points = torch.matmul(img2lidar.to(torch.float32),
+        #                       points.unsqueeze(-1).to(torch.float32)).squeeze(-1)
+        # import pdb;pdb.set_trace()
+        eps = 1e-5
+        points = points[..., 0:3] / torch.maximum(
+            points[..., 3:4], torch.ones_like(points[..., 3:4]) * eps)
+
+        return points
+
+    def get_cam_feats(self, x, mlp_input):
+        raise NotImplementedError
+
+    def get_mlp_input(self, sensor2ego, intrin, post_rot, post_tran, bda):
+        raise NotImplementedError
+
+    @force_fp32()
+    def bev_pool(self, geom_feats, x):
+        B, N, D, H, W, C = x.shape
+        Nprime = B * N * D * H * W
+
+        # flatten x
+        x = x.reshape(Nprime, C)
+
+        # flatten indices
+        geom_feats = ((geom_feats - (self.bx - self.dx / 2.0)) / self.dx).long()
+        geom_feats = geom_feats.view(Nprime, 3)
+        batch_ix = torch.cat(
+            [
+                torch.full([Nprime // B, 1], ix, device=x.device, dtype=torch.long)
+                for ix in range(B)
+            ]
+        )
+        geom_feats = torch.cat((geom_feats, batch_ix), 1)
+
+        # filter out points that are outside box
+        kept = (
+                (geom_feats[:, 0] >= 0)
+                & (geom_feats[:, 0] < self.nx[0])
+                & (geom_feats[:, 1] >= 0)
+                & (geom_feats[:, 1] < self.nx[1])
+                & (geom_feats[:, 2] >= 0)
+                & (geom_feats[:, 2] < self.nx[2])
+        )
+        x = x[kept]
+        geom_feats = geom_feats[kept]
+
+        x = bev_pool(x, geom_feats, B, self.nx[2], self.nx[0], self.nx[1])
+
+        # collapse Z
+        final = torch.cat(x.unbind(dim=2), 1)
+
+        return final
+
+    @force_fp32()
+    def forward(self, images, img_metas):
+        BN, C, fH, fW = images.shape          # origin (bs, 6, 256, 15, 25)
+        lidar2img = []
+        camera2ego = []
+        camera_intrinsics = []
+        img_aug_matrix = []
+        lidar2ego = []
+        pdb.set_trace()
+        for img_meta in img_metas:
+            # lidar2img.append(img_meta['lidar2img'])
+            camera2ego.append(img_meta['camera2ego'])
+            camera_intrinsics.append(img_meta['camera_intrinsics'])
+            img_aug_matrix.append(img_meta['img_aug_matrix'])
+            lidar2ego.append(img_meta['lidar2ego'])
+        # lidar2img = np.asarray(lidar2img)
+        # lidar2img = images.new_tensor(lidar2img)  # (B, N, 4, 4)
+        camera2ego = np.asarray(camera2ego)
+        camera2ego = images.new_tensor(camera2ego)                      # (B, N, 4, 4)
+        camera_intrinsics = np.asarray(camera_intrinsics)
+        camera_intrinsics = images.new_tensor(camera_intrinsics)        # (B, N, 4, 4)
+        img_aug_matrix = np.asarray(img_aug_matrix)
+        img_aug_matrix = images.new_tensor(img_aug_matrix)              # (B, N, 4, 4)
+        lidar2ego = np.asarray(lidar2ego)
+        lidar2ego = images.new_tensor(lidar2ego)                        # (B, N, 4, 4)
+
+        rots = camera2ego[..., :3, :3]
+        trans = camera2ego[..., :3, 3]
+        intrins = camera_intrinsics[..., :3, :3]
+        post_rots = img_aug_matrix[..., :3, :3]
+        # post_trans = img_aug_matrix[..., :3, 3]
+        post_trans = images.new_zeros(*post_rots.shape[:2], 3)
+        lidar2ego_rots = lidar2ego[..., :3, :3]
+        lidar2ego_trans = lidar2ego[..., :3, 3]
+
+        geom = self.get_geometry_v1(fH, fW, rots, trans, intrins, post_rots, post_trans, lidar2ego_rots, lidar2ego_trans, img_metas)
+
+        mlp_input = self.get_mlp_input(camera2ego, camera_intrinsics, post_rots, post_trans)
+        x, depth = self.get_cam_feats(images, mlp_input)
+        # pdb.set_trace()
+        x = self.bev_pool(geom, x)
+        x = x.permute(0, 1, 3, 2).contiguous()
+
+        return x, depth
+
+
+class LSSTransform(BaseTransform):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            feat_down_sample,
+            pc_range,
+            voxel_size,
+            dbound,
+            downsample=1,
+            loss_depth_weight=3.0,
+            depthnet_cfg=dict(),
+            grid_config=None,
+    ):
+        super(LSSTransform, self).__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            feat_down_sample=feat_down_sample,
+            pc_range=pc_range,
+            voxel_size=voxel_size,
+            dbound=dbound,
+        )
+
+        self.loss_depth_weight = loss_depth_weight
+        self.grid_config = grid_config
+        self.depth_net = DepthNet(in_channels, in_channels, self.C, self.D, **depthnet_cfg)
+        if downsample > 1:
+            assert downsample == 2, downsample
+            self.downsample = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(True),
+                nn.Conv2d(
+                    out_channels,
+                    out_channels,
+                    3,
+                    stride=downsample,
+                    padding=1,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(True),
+                nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(True),
+            )
+        else:
+            self.downsample = nn.Identity()
+
+    @force_fp32()
+    def get_cam_feats(self, x, mlp_input):
+        B, N, C, fH, fW = x.shape
+        x = x.view(B * N, C, fH, fW)
+        x = self.depth_net(x, mlp_input)
+        depth = x[:, : self.D].softmax(dim=1)
+        x = depth.unsqueeze(1) * x[:, self.D: (self.D + self.C)].unsqueeze(2)
+
+        x = x.view(B, N, self.C, self.D, fH, fW)
+        x = x.permute(0, 1, 3, 4, 5, 2)
+        depth = depth.view(B, N, self.D, fH, fW)
+        return x, depth
+
+    def forward(self, images, img_metas):
+        x, depth = super().forward(images, img_metas)
+        # pdb.set_trace()
+        x = self.downsample(x)
+        ret_dict = dict(
+            bev=x,
+            depth=depth,
+        )
+        return ret_dict
+
+    def get_downsampled_gt_depth(self, gt_depths):
+        """
+        Input:
+            gt_depths: [B, N, H, W]
+        Output:
+            gt_depths: [B*N*h*w, d]
+        """
+        B, N, H, W = gt_depths.shape
+        gt_depths = gt_depths.view(B * N, H // self.feat_down_sample, self.feat_down_sample,
+                                   W // self.feat_down_sample, self.feat_down_sample, 1)
+        gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()
+        gt_depths = gt_depths.view(-1, self.feat_down_sample * self.feat_down_sample)
+        # 把gt_depth做feat_down_sample倍数的采样
+        gt_depths_tmp = torch.where(gt_depths == 0.0, 1e5 * torch.ones_like(gt_depths), gt_depths)
+        # 因为深度很稀疏，大部分的点都是0，所以把0变成10000，下一步取-1维度上的最小就是深度的值
+        gt_depths = torch.min(gt_depths_tmp, dim=-1).values
+        gt_depths = gt_depths.view(B * N, H // self.feat_down_sample, W // self.feat_down_sample)
+
+        gt_depths = (gt_depths - (self.grid_config['depth'][0] - self.grid_config['depth'][2])) / \
+                    self.grid_config['depth'][2]
+        gt_depths = torch.where((gt_depths < self.D + 1) & (gt_depths >= 0.0), gt_depths, torch.zeros_like(gt_depths))
+        gt_depths = F.one_hot(gt_depths.long(), num_classes=self.D + 1).view(-1, self.D + 1)[:, 1:]
+        return gt_depths.float()
+
+    @force_fp32()
+    def get_depth_loss(self, depth_labels, depth_preds):
+
+        if depth_preds is None:
+            return 0
+
+        depth_labels = self.get_downsampled_gt_depth(depth_labels)
+        depth_preds = depth_preds.permute(0, 1, 3, 4, 2).contiguous().view(-1, self.D)
+        # fg_mask = torch.max(depth_labels, dim=1).values > 0.0 # 只计算有深度的前景的深度loss
+
+        fg_mask = depth_labels > 0.0  # 只计算有深度的前景的深度loss
+        depth_labels = depth_labels[fg_mask]
+        depth_preds = depth_preds[fg_mask]
+        with autocast(enabled=False):
+            depth_loss = F.binary_cross_entropy(
+                depth_preds,
+                depth_labels,
+                reduction='none',
+            ).sum() / max(1.0, fg_mask.sum())
+        # if depth_loss <= 0.:
+
+        return self.loss_depth_weight * depth_loss
+
+    def get_mlp_input(self, sensor2ego, intrin, post_rot, post_tran):
+        B, N, _, _ = sensor2ego.shape
+        mlp_input = torch.stack([
+            intrin[:, :, 0, 0],
+            intrin[:, :, 1, 1],
+            intrin[:, :, 0, 2],
+            intrin[:, :, 1, 2],
+            post_rot[:, :, 0, 0],
+            post_rot[:, :, 0, 1],
+            post_tran[:, :, 0],
+            post_rot[:, :, 1, 0],
+            post_rot[:, :, 1, 1],
+            post_tran[:, :, 1],
+        ], dim=-1)
+        # pdb.set_trace()
+        sensor2ego = sensor2ego[:, :, :3, :].reshape(B, N, -1)
+        mlp_input = torch.cat([mlp_input, sensor2ego], dim=-1)
+        return mlp_input
+
+
+class TransformerDepth(nn.Module):
     def __init__(
         self,
         in_channels,
@@ -121,10 +523,11 @@ class Transformer(nn.Module):
         src = self.input_proj(src)  # (B, C, H, W)
         src = src.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
 
+        camera2ego = cameras_info['cam_ego_pose'].float()
+        extrinsic = cameras_info['extrinsic'].float()       # [1, 6, 4, 4]
+        intrinsic = cameras_info['intrinsic'].float()       # [1, 6, 3, 3]
+        ida_mats = cameras_info['ida_mats'].float()         # [1, 6, 3, 3]
         if self.src_pos_embed.startswith('ipm_learned'):
-            extrinsic = cameras_info['extrinsic'].float()
-            intrinsic = cameras_info['intrinsic'].float()
-            ida_mats = cameras_info['ida_mats'].float()
             do_flip = cameras_info['do_flip']
             src_pos_embed, src_mask = self.src_pos_embed_layer(extrinsic, intrinsic, ida_mats, do_flip)
             mask = ~src_mask
@@ -139,15 +542,47 @@ class Transformer(nn.Module):
         tgt = query_embed  # (H* W, B, C)
 
         query_mask = torch.zeros((bs, *self.query_shape), dtype=torch.bool, device=src.device)
-        query_pos_embed = self.tgt_pos_embed_layer(query_mask)  # (B, C, H, W)
-        query_pos_embed = query_pos_embed.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
+        query_pos_embed = self.tgt_pos_embed_layer(query_mask)                   # (B, C, H, W)
+        query_pos_embed = query_pos_embed.flatten(2).permute(2, 0, 1)            # (H* W, B, C)
 
-        memory = self.encoder.forward(src, None, mask, src_pos_embed)  # (H* W, B, C)
+        memory = self.encoder.forward(src, None, mask, src_pos_embed)      # (H* W, B, C)
         hs = self.decoder.forward(tgt, memory, None, None, None, mask, src_pos_embed, query_pos_embed)  # (M, H* W, B, C)
-        ys = hs.permute(0, 2, 3, 1)  # (M, B, C, H* W)
-        ys = ys.reshape(*ys.shape[:-1], *self.query_shape)  # (M, B, C, H, W)
+        ys = hs.permute(0, 2, 3, 1)                        # (M, B, C, H* W)
+        ys = ys.reshape(*ys.shape[:-1], *self.query_shape)       # (M, B, C, H, W)
+
+        post_trans = torch.zeros(bs, c, 3).cuda()
+        mlp_input = self.get_mlp_input(camera2ego, intrinsic, ida_mats, post_trans)
+        depth = self.get_cam_feats(images, mlp_input)              # 原 [2, 6, 68, 15, 25]
 
         return memory, hs, ys
+
+
+    def get_cam_feats(self, x, mlp_input):
+        B, N, C, fH, fW = x.shape
+        x = x.view(B * N, C, fH, fW)
+        x = self.depth_net(x, mlp_input)
+        depth = x[:, : self.D].softmax(dim=1)
+        depth = depth.view(B, N, self.D, fH, fW)
+        return depth
+
+
+    def get_mlp_input(self, sensor2ego, intrin, post_rot, post_tran):
+        B, N, _, _ = sensor2ego.shape        # [4, 4]
+        mlp_input = torch.stack([
+            intrin[:, :, 0, 0],
+            intrin[:, :, 1, 1],
+            intrin[:, :, 0, 2],
+            intrin[:, :, 1, 2],
+            post_rot[:, :, 0, 0],
+            post_rot[:, :, 0, 1],
+            post_tran[:, :, 0],
+            post_rot[:, :, 1, 0],
+            post_rot[:, :, 1, 1],
+            post_tran[:, :, 1],
+        ], dim=-1)
+        sensor2ego = sensor2ego[:, :, :3, :].reshape(B, N, -1)
+        mlp_input = torch.cat([mlp_input, sensor2ego], dim=-1)
+        return mlp_input
 
 
 class TransformerEncoder(nn.Module):
