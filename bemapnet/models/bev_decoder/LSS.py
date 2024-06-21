@@ -62,10 +62,10 @@ class BaseTransform(BaseModule):
     def create_frustum(self, fH, fW, img_metas):
         # iH, iW = self.image_size
         # fH, fW = self.feature_size
-        iH = img_metas[0]['img_shape'][0][0]
-        iW = img_metas[0]['img_shape'][0][1]
-        assert iH // self.feat_down_sample == fH
-        # import pdb;pdb.set_trace()
+        iH = img_metas['img_shape'][-2]
+        iW = img_metas['img_shape'][-1]
+        # assert iH // self.feat_down_sample == fH
+        # pdb.set_trace()
         ds = (
             torch.arange(*self.dbound, dtype=torch.float)
             .view(-1, 1, 1)
@@ -86,6 +86,7 @@ class BaseTransform(BaseModule):
 
         frustum = torch.stack((xs, ys, ds), -1)
         # return nn.Parameter(frustum, requires_grad=False)
+        # pdb.set_trace()
         return frustum
 
     @force_fp32()
@@ -107,9 +108,9 @@ class BaseTransform(BaseModule):
         device = trans.device
         if self.frustum == None:
             self.frustum = self.create_frustum(fH, fW, img_metas)
-            self.frustum = self.frustum.to(device)
+            self.frustum = self.frustum.to(device)                    # [68, 21, 49, 3]
             # self.D = self.frustum.shape[0]
-
+        # pdb.set_trace()
         # undo post-transformation
         # B x N x D x H x W x 3
         points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
@@ -188,7 +189,7 @@ class BaseTransform(BaseModule):
     def get_cam_feats(self, x, mlp_input):
         raise NotImplementedError
 
-    def get_mlp_input(self, sensor2ego, intrin, post_rot, post_tran, bda):
+    def get_mlp_input(self, sensor2ego, intrin, post_rot, post_tran, ):
         raise NotImplementedError
 
     @force_fp32()
@@ -231,29 +232,35 @@ class BaseTransform(BaseModule):
 
     @force_fp32()
     def forward(self, images, img_metas):
-        BN, C, fH, fW = images.shape          # origin (bs, 6, 256, 15, 25)
+        B, N, C, fH, fW = images.shape          # origin (bs, 6, 256, 15, 25)
         lidar2img = []
-        camera2ego = []
-        camera_intrinsics = []
-        img_aug_matrix = []
-        lidar2ego = []
-        pdb.set_trace()
-        for img_meta in img_metas:
-            # lidar2img.append(img_meta['lidar2img'])
-            camera2ego.append(img_meta['camera2ego'])
-            camera_intrinsics.append(img_meta['camera_intrinsics'])
-            img_aug_matrix.append(img_meta['img_aug_matrix'])
-            lidar2ego.append(img_meta['lidar2ego'])
+        # camera2ego = []
+        # camera_intrinsics = []
+        # img_aug_matrix = []
+        # lidar2ego = []
+        # pdb.set_trace()
+        # for img_meta in img_metas:
+        #     # lidar2img.append(img_meta['lidar2img'])
+        #     camera2ego.append(img_meta['camera2ego'])
+        #     camera_intrinsics.append(img_meta['camera_intrinsics'])
+        #     img_aug_matrix.append(img_meta['img_aug_matrix'])
+        #     lidar2ego.append(img_meta['lidar2ego'])
         # lidar2img = np.asarray(lidar2img)
         # lidar2img = images.new_tensor(lidar2img)  # (B, N, 4, 4)
-        camera2ego = np.asarray(camera2ego)
-        camera2ego = images.new_tensor(camera2ego)                      # (B, N, 4, 4)
-        camera_intrinsics = np.asarray(camera_intrinsics)
-        camera_intrinsics = images.new_tensor(camera_intrinsics)        # (B, N, 4, 4)
-        img_aug_matrix = np.asarray(img_aug_matrix)
-        img_aug_matrix = images.new_tensor(img_aug_matrix)              # (B, N, 4, 4)
-        lidar2ego = np.asarray(lidar2ego)
-        lidar2ego = images.new_tensor(lidar2ego)                        # (B, N, 4, 4)
+
+        # camera2ego = np.asarray(camera2ego)
+        # camera2ego = images.new_tensor(camera2ego)                      # (B, N, 4, 4)
+        # camera_intrinsics = np.asarray(camera_intrinsics)
+        # camera_intrinsics = images.new_tensor(camera_intrinsics)        # (B, N, 4, 4)
+        # img_aug_matrix = np.asarray(img_aug_matrix)
+        # img_aug_matrix = images.new_tensor(img_aug_matrix)              # (B, N, 4, 4)
+        # lidar2ego = np.asarray(lidar2ego)
+        # lidar2ego = images.new_tensor(lidar2ego)                        # (B, N, 4, 4)
+
+        camera2ego = images.new_tensor(img_metas['camera2ego'])
+        camera_intrinsics = images.new_tensor(img_metas['camera_intrinsics'])
+        img_aug_matrix = images.new_tensor(img_metas['img_aug_matrix'])
+        lidar2ego = images.new_tensor(img_metas['lidar2ego'])
 
         rots = camera2ego[..., :3, :3]
         trans = camera2ego[..., :3, 3]
@@ -265,7 +272,7 @@ class BaseTransform(BaseModule):
         lidar2ego_trans = lidar2ego[..., :3, 3]
 
         geom = self.get_geometry_v1(fH, fW, rots, trans, intrins, post_rots, post_trans, lidar2ego_rots, lidar2ego_trans, img_metas)
-
+        # pdb.set_trace()
         mlp_input = self.get_mlp_input(camera2ego, camera_intrinsics, post_rots, post_trans)
         x, depth = self.get_cam_feats(images, mlp_input)
         # pdb.set_trace()
@@ -278,6 +285,7 @@ class BaseTransform(BaseModule):
 class LSSTransform(BaseTransform):
     def __init__(
             self,
+            fpn_channels,
             in_channels,
             out_channels,
             feat_down_sample,
@@ -323,9 +331,11 @@ class LSSTransform(BaseTransform):
             )
         else:
             self.downsample = nn.Identity()
+        self.input_proj = nn.Conv2d(fpn_channels, in_channels, kernel_size=1)
 
     @force_fp32()
     def get_cam_feats(self, x, mlp_input):
+        # pdb.set_trace()
         B, N, C, fH, fW = x.shape
         x = x.view(B * N, C, fH, fW)
         x = self.depth_net(x, mlp_input)
@@ -338,6 +348,10 @@ class LSSTransform(BaseTransform):
         return x, depth
 
     def forward(self, images, img_metas):
+        bs, n, c, h, w = images.shape
+        images = self.input_proj(images.view(bs*n, c, h, w))
+        c = images.shape[1]
+        images = images.view(bs, n, c, h, w)
         x, depth = super().forward(images, img_metas)
         # pdb.set_trace()
         x = self.downsample(x)

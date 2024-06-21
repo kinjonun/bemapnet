@@ -38,17 +38,25 @@
 - **c. Install PyTorch and torchvision following the [official instructions](https://pytorch.org/get-started/previous-versions/).**
   ```shell
   pip3 install torch==1.10.1+cu111 torchvision==0.11.2+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+  
+  conda install pytorch==1.10.1 torchvision==0.11.2 torchaudio==0.10.1 -c pytorch
   ```
 
 - **d. Install MMCV following the [official instructions](https://github.com/open-mmlab/mmcv). (need GPU)**
   ```shell
   pip3 install -U openmim
   mim install mmcv==1.7.1
+  
+  pip install mmcv-full==1.4.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.10.1/index.html
   ```
 
 - **e. Install Detectron2 following the [official instructions](https://detectron2.readthedocs.io/en/latest/tutorials/install.html).**
   ```shell
   python3 -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu111/torch1.10/index.html
+  
+  python -m pip install detectron2==0.6 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu113/torch1.10/index.html
+  
+  python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu111/torch1.9/index.html
   ```
 
 - **f. Install BeMapNet.**

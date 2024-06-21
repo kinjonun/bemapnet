@@ -71,7 +71,7 @@ class TransformerBEVDecoderLSS(nn.Module):
         fuse_feats = feats[-1]                                                                # [6, 600, 21, 49]
         # pdb.set_trace()
         fuse_feats = fuse_feats.reshape(*inputs['images'].shape[:2], *fuse_feats.shape[-3:])  # [1, 6, 600, 21, 49]
-        fuse_feats = torch.cat(torch.unbind(fuse_feats, dim=1), dim=-1)                       # [1, 600, 21, 294]
+        # fuse_feats = torch.cat(torch.unbind(fuse_feats, dim=1), dim=-1)                       # [1, 600, 21, 294]
 
         ida_mats = inputs.get('ida_mats', None)
 
@@ -84,6 +84,6 @@ class TransformerBEVDecoderLSS(nn.Module):
             'img_shape': inputs['images'].shape,
         }
 
-        _, _, bev_feats = self.bev_encoder(fuse_feats, img_metas=cameras_info)             # [4, 1, 512, 64, 32]
-
-        return {"bev_enc_features": list(bev_feats)}
+        ret_dict = self.bev_encoder(fuse_feats, img_metas=cameras_info)   # 原[4, 1, 512, 64, 32]. bev [1, 256, 200, 100] depth [1, 6, 68, 21, 49]
+        pdb.set_trace()
+        return {"bev_enc_features": list(ret_dict['bev'])}

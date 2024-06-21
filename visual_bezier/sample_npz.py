@@ -45,10 +45,14 @@ def nuscenes_npz():
 
     file_path = os.path.join(folder_path, random_file)
     data = np.load(file_path, allow_pickle=True)
-    # pdb.set_trace()
+    # ['image_paths', 'trans', 'rots', 'intrins', 'semantic_mask', 'instance_mask', 'instance_mask8', 'ego_vectors',
+    # 'map_vectors', 'ctr_points', 'cam_ego_pose_trans', 'cam_ego_pose_rots', 'lidar_filename', 'lidar_tran',
+    # 'lidar_rot', 'lidar_ego_pose_tran', 'lidar_ego_pose_rot']
+    pdb.set_trace()
     image_paths = data['image_paths']
     trans = data['trans']
     rots = data['rots']
+    lidar_rot = data['lidar_rot']      # 四元数
     intrins = data['intrins']
     semantic_mask = data['semantic_mask']  # (3, 400, 200)
     instance_mask = data['instance_mask']  # (3, 400, 200)

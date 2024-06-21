@@ -41,7 +41,7 @@ class NuScenesMapDataset(Dataset):
                     img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
                     images.append(img)
                     ida_mats.append(ida_mat)
-
+        # pdb.set_trace()
         extrinsic = np.stack([np.eye(4) for _ in range(sample["trans"].shape[0])], axis=0)
         extrinsic[:, :3, :3] = sample["rots"]
         extrinsic[:, :3, 3] = sample["trans"]

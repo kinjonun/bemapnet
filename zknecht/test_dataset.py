@@ -1,4 +1,4 @@
-from bemapnet.dataset.nuscenes_depth import NuScenesMapDatasetDepth
+from bemapnet.dataset.nuscenes_lss import NuScenesMapDatasetDepth
 from torchvision.transforms import Compose
 from bemapnet.dataset.transform import Normalize, ToTensor
 
@@ -45,5 +45,5 @@ nusc = NuScenesMapDatasetDepth(img_key_list=dataset_setup["img_key_list"],
             transforms=transform,
             data_split="training",)
 
-print(nusc[0]["lidar_depth"])
-print("extrinsic", nusc[0]["extrinsic"])
+print('cam_ego_pose', nusc[0]["cam_ego_pose"])
+# print("extrinsic", nusc[0]["extrinsic"])

@@ -116,15 +116,15 @@ class Transformer(nn.Module):
         src = src.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
 
         if self.src_pos_embed.startswith('ipm_learned'):
-            extrinsic = cameras_info['extrinsic'].float()
-            intrinsic = cameras_info['intrinsic'].float()
-            ida_mats = cameras_info['ida_mats'].float()
+            extrinsic = cameras_info['extrinsic'].float()         # [1, 6, 4, 4]
+            intrinsic = cameras_info['intrinsic'].float()         # [1, 6, 3, 3]
+            ida_mats = cameras_info['ida_mats'].float()           # [1, 6, 3, 3]
             do_flip = cameras_info['do_flip']
             src_pos_embed, src_mask = self.src_pos_embed_layer(extrinsic, intrinsic, ida_mats, do_flip)
             mask = ~src_mask
         else:
             src_pos_embed = self.src_pos_embed_layer(mask)
-
+        # pdb.set_trace()
         src_pos_embed = src_pos_embed.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
         mask = mask.flatten(1)  # (B, H * W)
 

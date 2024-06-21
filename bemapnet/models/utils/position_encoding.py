@@ -107,11 +107,11 @@ class PositionEmbeddingIPM(nn.Module):
         feat_coords = torch.stack([x_grid, y_grid, z], dim=-1).to("cuda:0")      # (H, W, 3)
         feat_coords = feat_coords.unsqueeze(0).repeat(n, 1, 1, 1).unsqueeze(0).repeat(b, 1, 1, 1, 1).to("cuda:0")  # (B, N, H, W, 3)
 
-        ida_mats = ida_mats.view(b, n, 1, 1, 3, 3).to("cuda:0")
-        image_coords = ida_mats.inverse().matmul(feat_coords.unsqueeze(-1))   # (B, N, H, W, 3, 1)
+        ida_mats = ida_mats.view(b, n, 1, 1, 3, 3).cpu()
+        image_coords = (ida_mats.inverse()).cuda().matmul(feat_coords.unsqueeze(-1))   # (B, N, H, W, 3, 1)
 
-        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3).to("cuda:0")             # (B, N, 1, 1, 3, 3)
-        normed_coords = torch.linalg.inv(intrinsic) @ image_coords            # (B, N, H, W, 3, 1)
+        intrinsic = intrinsic.view(b, n, 1, 1, 3, 3).cpu()        # (B, N, 1, 1, 3, 3)
+        normed_coords = (torch.linalg.inv(intrinsic)).cuda() @ image_coords            # (B, N, H, W, 3, 1)
 
         ext_rots = extrinsic[:, :, :3, :3]                                    # (B, N, 3, 3)
         ext_trans = extrinsic[:, :, :3, 3].to("cuda:0")                       # (B, N, 3)

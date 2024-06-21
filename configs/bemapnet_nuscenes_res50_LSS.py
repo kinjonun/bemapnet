@@ -12,6 +12,7 @@ from bemapnet.models.network import BeMapNet
 from bemapnet.engine.core import BeMapNetCli
 from bemapnet.engine.experiment import BaseExp
 from bemapnet.dataset.nusc_dataset import NuScenesMapDataset
+from bemapnet.dataset.nuscenes_lss import NuScenesMapDatasetDepth
 from bemapnet.dataset.transform import Normalize, ToTensor
 from bemapnet.utils.misc import get_param_groups, is_distributed
 
@@ -27,7 +28,7 @@ class EXPConfig:
     map_conf = dict(
         dataset_name="nuscenes",
         nusc_root="data/nuscenes",
-        anno_root="data/nuscenes/customer/bemapnet",
+        anno_root="data/nuscenes/customer/bemapnet_lidar",
         split_dir="assets/splits/nuscenes",
         num_classes=3,
         ego_size=(60, 30),
@@ -46,6 +47,10 @@ class EXPConfig:
         'depth': [1.0, 35.0, 0.5],  # useful
     }
 
+    point_cloud_range = [-15.0, -30.0, -10.0, 15.0, 30.0, 10.0]
+    voxel_size = [0.15, 0.15, 20.0]
+    dbound = [1.0, 35.0, 0.5]
+
     bezier_conf = dict(
         num_degree=(2, 1, 3),
         max_pieces=(3, 1, 7),
@@ -60,6 +65,7 @@ class EXPConfig:
     )
 
     model_setup = dict(
+        use_depth_loss=True,
         im_backbone=dict(
             arch_name="resnet",
             bkb_kwargs=dict(
@@ -79,38 +85,25 @@ class EXPConfig:
             fpn_kwargs=dict(
                 conv_channels=(512, 1024, 2048),
                 fpn_cell_repeat=3,
-                fpn_num_filters=128,  # 128 -> 120  avoid OOM only
+                fpn_num_filters=128,              # 128 -> 120  avoid OOM only
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True, 
                 tgt_shape=(21, 49)
             ),
         ),
         bev_decoder=dict(
-            arch_name="transformer",
+            arch_name="LSS_transform",
             net_kwargs=dict(
                 key='im_nek_features',
-                in_channels=640,               # 120*5   fpn_num_filters*5  (p3-p7_out)
-                num_camera=6,
-                src_shape=(21, 49*6),
-                query_shape=(64, 32),
-                d_model=512,
-                nhead=8,
-                num_encoder_layers=2,
-                num_decoder_layers=4,
-                dim_feedforward=1024,
-                src_pos_embed='ipm_learned',
-                tgt_pos_embed='ipm_learned',
-                dropout=0.1,
-                activation="relu",
-                normalize_before=False,
-                return_intermediate_dec=True,
-                use_checkpoint=True,
-                ipm_proj_conf=dict(
-                    map_size=map_conf["map_size"],
-                    map_resolution=map_conf["map_resolution"],
-                    # input_shape=(852, 1536)
-                    input_shape=(512, 896)
-                ),
+                fpn_channels=640,                # 128 * 5
+                in_channels=256,
+                out_channels=256,
+                feat_down_sample=32,
+                pc_range=point_cloud_range,
+                voxel_size=voxel_size,
+                dbound=dbound,
+                downsample=2,
+                loss_depth_weight=3.0,
                 depthnet_cfg=dict(use_dcn=False, with_cp=False, aspp_mid_channels=96),
                 grid_config=grid_config,
             ),
@@ -232,7 +225,7 @@ class Exp(BaseExp):
             ]
         )
 
-        train_set = NuScenesMapDataset(
+        train_set = NuScenesMapDatasetDepth(
             img_key_list=dataset_setup["img_key_list"],
             map_conf=self.exp_config.map_conf,
             ida_conf=self.exp_config.ida_conf,
@@ -268,7 +261,7 @@ class Exp(BaseExp):
             ]
         )
 
-        val_set = NuScenesMapDataset(
+        val_set = NuScenesMapDatasetDepth(
             img_key_list=dataset_setup["img_key_list"],
             map_conf=self.exp_config.map_conf,
             ida_conf=self.exp_config.ida_conf,

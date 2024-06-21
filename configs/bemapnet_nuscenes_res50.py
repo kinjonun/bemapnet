@@ -53,6 +53,7 @@ class EXPConfig:
     )
 
     model_setup = dict(
+        use_depth_loss=False,
         im_backbone=dict(
             arch_name="resnet",
             bkb_kwargs=dict(
@@ -72,7 +73,7 @@ class EXPConfig:
             fpn_kwargs=dict(
                 conv_channels=(512, 1024, 2048),
                 fpn_cell_repeat=3,
-                fpn_num_filters=128,  # 128 -> 120  avoid OOM only
+                fpn_num_filters=128,           # 128 -> 120  avoid OOM only
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True, 
                 tgt_shape=(21, 49)

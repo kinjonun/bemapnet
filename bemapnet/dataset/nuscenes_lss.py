@@ -116,8 +116,8 @@ class NuScenesMapDatasetDepth(Dataset):
         self.max_pieces = bezier_conf["max_pieces"]
         self.max_instances = bezier_conf["max_instances"]
         self.split_mode = 'train' if data_split == "training" else 'val'
-        # split_path = os.path.join(self.split_dir, f'{self.split_mode}.txt')
-        split_path = os.path.join('/home/sun/Bev/BeMapNet/assets/splits/nuscenes/ein.txt')
+        split_path = os.path.join(self.split_dir, f'{self.split_mode}.txt')
+        # split_path = os.path.join('/home/sun/Bev/BeMapNet/assets/splits/nuscenes/ein.txt')
         self.tokens = [token.strip() for token in open(split_path).readlines()]
         self.transforms = transforms
         self.return_depth = True
@@ -139,6 +139,7 @@ class NuScenesMapDatasetDepth(Dataset):
         lidar_points = np.fromfile(os.path.join(self.nusc_root, lidar_filename), dtype=np.float32,
                                    count=-1).reshape(-1, 5)[..., :4]
 
+        cam_ego = np.stack([np.eye(4) for _ in range(sample["trans"].shape[0])], axis=0)
         # pdb.set_trace()
         for i in range(len(sample['image_paths'])):
             im_path = sample['image_paths'][i]
@@ -151,6 +152,8 @@ class NuScenesMapDatasetDepth(Dataset):
             cam_ego_pose = dict(
                 rotation=sample['cam_ego_pose_rots'][i],
                 translation=sample['cam_ego_pose_trans'][i])
+            cam_ego[i, :3, :3] = Quaternion(sample['cam_ego_pose_rots'][i]).rotation_matrix
+            cam_ego[i, :3, 3] = sample['cam_ego_pose_trans'][i]
             # pdb.set_trace()
             if self.return_depth:
                 pts_img, depth = map_pointcloud_to_image(lidar_points.copy(), img.shape[:2], lidar_calibrated_sensor.copy(),
@@ -163,8 +166,6 @@ class NuScenesMapDatasetDepth(Dataset):
             images.append(img)
             ida_mats.append(ida_mat)
 
-
-
         # plt.imshow(lidar_depth[0], cmap='hot')
         # plt.colorbar()  # 添加颜色条
         # plt.show()  # 显示图片
@@ -176,8 +177,11 @@ class NuScenesMapDatasetDepth(Dataset):
             rots.append(extrin)
 
         extrinsic = np.stack([np.eye(4) for _ in range(sample["trans"].shape[0])], axis=0)
+        lidar2ego = np.eye(4)
         extrinsic[:, :3, :3] = np.array(rots)
         extrinsic[:, :3, 3] = sample["trans"]
+        lidar2ego[:3, :3] = np.array(Quaternion(lidar_calibrated_sensor['rotation']).rotation_matrix)
+        lidar2ego[:3, 3] = lidar_calibrated_sensor['translation']
         intrinsic = sample['intrins']
         # image_paths = torch.tensor(sample['image_paths'].tolist())
         ctr_points = np.zeros((self.max_instances, max(self.max_pieces) * max(self.num_degree) + 1, 2), dtype=np.float)
@@ -208,6 +212,7 @@ class NuScenesMapDatasetDepth(Dataset):
             images=images, targets=dict(masks=masks, points=ctr_points, labels=ins_labels),
             extrinsic=np.stack(extrinsic), intrinsic=np.stack(intrinsic), ida_mats=np.stack(ida_mats),
             extra_infos=dict(token=token, img_key_list=self.img_key_list, map_size=self.ego_size, do_flip=flip),
+            cam_ego_pose=cam_ego, lidar_ego_pose=lidar_ego_pose, lidar_calibrated_sensor=lidar2ego,
         )
         if self.transforms is not None:
             item = self.transforms(item)

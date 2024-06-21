@@ -1,4 +1,5 @@
 import torch.nn as nn
+import pdb
 from bemapnet.models import backbone, bev_decoder, ins_decoder, output_head
 # os.environ['TORCH_DISTRIBUTED_DEBUG'] = "INFO"
 # warnings.filterwarnings('ignore')
@@ -12,11 +13,15 @@ class BeMapNet(nn.Module):
         self.ins_decoder = self.create_ins_decoder(**model_config["ins_decoder"])
         self.output_head = self.create_output_head(**model_config["output_head"])
         self.post_processor = self.create_post_processor(**model_config["post_processor"])
+        self.use_depth_loss = model_config["use_depth_loss"]
 
     def forward(self, inputs):
         outputs = {}
         outputs.update({k: inputs[k] for k in ["images", "extra_infos"]})
         outputs.update({k: inputs[k].float()for k in ["extrinsic", "intrinsic", "ida_mats"]})
+        # pdb.set_trace()
+        if self.use_depth_loss:
+            outputs.update({k: inputs[k].float() for k in ["lidar_calibrated_sensor"]})
         outputs.update(self.im_backbone(outputs))
         outputs.update(self.bev_decoder(outputs))
         outputs.update(self.ins_decoder(outputs))
@@ -36,6 +41,8 @@ class BeMapNet(nn.Module):
     def create_bev_decoder(arch_name, net_kwargs):
         __factory_dict__ = {
             "transformer": bev_decoder.TransformerBEVDecoder,
+            "transformer_depth": bev_decoder.TransformerBEVDecoderDepth,
+            "LSS_transform": bev_decoder.TransformerBEVDecoderLSS,
         }
         return __factory_dict__[arch_name](**net_kwargs)
 
