@@ -12,7 +12,8 @@ from bemapnet.models.utils.mask_loss import SegmentationLoss
 from bemapnet.models.utils.recovery_loss import PointRecoveryLoss
 from bemapnet.utils.misc import nested_tensor_from_tensor_list
 from bemapnet.utils.misc import get_world_size, is_available, is_distributed
-
+from mmcv.runner import force_fp32, auto_fp16
+from torch.cuda.amp.autocast_mode import autocast
 
 class HungarianMatcher(nn.Module):
 
@@ -89,6 +90,13 @@ class SetCriterion(nn.Module):
         self.loss_weight_dict = self.criterion_conf['loss_weight']
         self.sem_mask_loss = SegmentationLoss(**criterion_conf['bev_decoder']['sem_mask_loss'])
         self.register_buffer("empty_weight", torch.tensor([1.0, no_object_coe]))
+        if 'lss_loss' in criterion_conf:
+            self.feat_down_sample = criterion_conf['lss_loss']['feat_down_sample']
+            self.grid_config = criterion_conf['lss_loss']['grid_config']
+            self.dbound = criterion_conf['lss_loss']['dbound']
+            self.D = int((self.dbound[1] - self.dbound[0]) / self.dbound[2])
+
+
 
     def forward(self, outputs, targets):
         losses = {}
@@ -96,6 +104,9 @@ class SetCriterion(nn.Module):
         losses.update(self.criterion_instance(outputs, targets, matching_indices))
         losses.update(self.criterion_instance_labels(outputs, targets, matching_indices))
         losses.update(self.criterion_semantic_masks(outputs, targets))
+        # pdb.set_trace()
+        if 'pred_depth' in outputs:
+            losses.update(self.get_depth_loss(outputs['lidar_depth'], outputs['pred_depth']))
         losses = {key: self.criterion_conf['loss_weight'][key] * losses[key] for key in losses}
         return sum(losses.values()), losses
 
@@ -173,7 +184,7 @@ class SetCriterion(nn.Module):
         loss_rec /= (num_decoders * num_classes)
 
         return {"ctr_loss": loss_ctr,   "end_loss": loss_end,  "msk_loss": loss_masks,   "curve_loss": loss_curve,
-                "recovery_loss": loss_rec }
+                "recovery_loss": loss_rec}
 
     def criterion_instance_labels(self, outputs, targets, matching_indices):
         loss_labels = 0
@@ -218,6 +229,53 @@ class SetCriterion(nn.Module):
         batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
+
+    def get_downsampled_gt_depth(self, gt_depths):
+        """
+        Input:
+            gt_depths: [B, N, H, W]
+        Output:
+            gt_depths: [B*N*h*w, d]
+        """
+        B, N, H, W = gt_depths.shape
+        gt_depths = gt_depths.view(B * N, H // self.feat_down_sample, self.feat_down_sample,
+                                          W // self.feat_down_sample, self.feat_down_sample, 1)
+        gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()
+        gt_depths = gt_depths.view(-1, self.feat_down_sample * self.feat_down_sample)
+        # 把gt_depth做feat_down_sample倍数的采样
+        gt_depths_tmp = torch.where(gt_depths == 0.0, 1e5 * torch.ones_like(gt_depths), gt_depths)
+        # 因为深度很稀疏，大部分的点都是0，所以把0变成10000，下一步取-1维度上的最小就是深度的值
+        gt_depths = torch.min(gt_depths_tmp, dim=-1).values
+        gt_depths = gt_depths.view(B * N, H // self.feat_down_sample, W // self.feat_down_sample)
+
+        gt_depths = (gt_depths - (self.grid_config['depth'][0] - self.grid_config['depth'][2])) / \
+                    self.grid_config['depth'][2]
+        gt_depths = torch.where((gt_depths < self.D + 1) & (gt_depths >= 0.0), gt_depths, torch.zeros_like(gt_depths))
+        gt_depths = F.one_hot(gt_depths.long(), num_classes=self.D + 1).view(-1, self.D + 1)[:, 1:]
+        return gt_depths.float()
+
+    @force_fp32()
+    def get_depth_loss(self, depth_labels, depth_preds):
+
+        if depth_preds is None:
+            return 0
+
+        depth_labels = self.get_downsampled_gt_depth(depth_labels)
+        depth_preds = depth_preds.permute(0, 1, 3, 4, 2).contiguous().view(-1, self.D)
+        # fg_mask = torch.max(depth_labels, dim=1).values > 0.0    # 只计算有深度的前景的深度loss
+        # pdb.set_trace()
+        fg_mask = depth_labels > 0.0                               # 只计算有深度的前景的深度loss
+        depth_labels = depth_labels[fg_mask]
+        depth_preds = depth_preds[fg_mask]
+        with autocast(enabled=False):
+            depth_loss = F.binary_cross_entropy(
+                depth_preds,
+                depth_labels,
+                reduction='none',
+            ).sum() / max(1.0, fg_mask.sum())
+        # if depth_loss <= 0.:
+
+        return {"depth_loss": depth_loss}
 
 
 class PiecewiseBezierMapPostProcessor(nn.Module):

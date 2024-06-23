@@ -64,6 +64,8 @@ class TransformerBEVDecoderLSS(nn.Module):
         super(TransformerBEVDecoderLSS, self).__init__()
         self.bev_encoder = LSSTransform(**kwargs)
         self.key = key
+        self.ouput_proj = nn.Conv2d(256, 512, kernel_size=1)
+
 
     def forward(self, inputs):
         assert self.key in inputs
@@ -84,6 +86,9 @@ class TransformerBEVDecoderLSS(nn.Module):
             'img_shape': inputs['images'].shape,
         }
 
-        ret_dict = self.bev_encoder(fuse_feats, img_metas=cameras_info)   # 原[4, 1, 512, 64, 32]. bev [1, 256, 200, 100] depth [1, 6, 68, 21, 49]
-        pdb.set_trace()
-        return {"bev_enc_features": list(ret_dict['bev'])}
+        ret_dict = self.bev_encoder(fuse_feats, img_metas=cameras_info)   # origin [4, 1, 512, 64, 32]. bev [1, 256, 200, 100] depth [1, 6, 68, 21, 49]
+
+        bev_enc_features = self.ouput_proj(ret_dict['bev'])
+        bev_enc_features = bev_enc_features.view(-1, *bev_enc_features.shape)
+        # pdb.set_trace()
+        return {"bev_enc_features": list(bev_enc_features), 'pred_depth': ret_dict['depth']}

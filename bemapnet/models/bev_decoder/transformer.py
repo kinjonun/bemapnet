@@ -112,34 +112,34 @@ class Transformer(nn.Module):
         if mask is None:
             mask = torch.zeros((bs, h, w), dtype=torch.bool, device=src.device)  # (B, H, W)
 
-        src = self.input_proj(src)  # (B, C, H, W)
-        src = src.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
+        src = self.input_proj(src)                                  # (B, C, H, W)
+        src = src.flatten(2).permute(2, 0, 1)                       # (H* W, B, C)
 
         if self.src_pos_embed.startswith('ipm_learned'):
-            extrinsic = cameras_info['extrinsic'].float()         # [1, 6, 4, 4]
-            intrinsic = cameras_info['intrinsic'].float()         # [1, 6, 3, 3]
-            ida_mats = cameras_info['ida_mats'].float()           # [1, 6, 3, 3]
+            extrinsic = cameras_info['extrinsic'].float()           # [1, 6, 4, 4]
+            intrinsic = cameras_info['intrinsic'].float()           # [1, 6, 3, 3]
+            ida_mats = cameras_info['ida_mats'].float()             # [1, 6, 3, 3]
             do_flip = cameras_info['do_flip']
             src_pos_embed, src_mask = self.src_pos_embed_layer(extrinsic, intrinsic, ida_mats, do_flip)
             mask = ~src_mask
         else:
             src_pos_embed = self.src_pos_embed_layer(mask)
         # pdb.set_trace()
-        src_pos_embed = src_pos_embed.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
-        mask = mask.flatten(1)  # (B, H * W)
+        src_pos_embed = src_pos_embed.flatten(2).permute(2, 0, 1)               # (H* W, B, C)
+        mask = mask.flatten(1)                                                  # (B, H * W)
 
-        query_embed = self.query_embed.weight  # (H* W, C)
-        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)  # (H* W, B, C)
-        tgt = query_embed  # (H* W, B, C)
+        query_embed = self.query_embed.weight                                   # (H* W, C)
+        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)                 # (H* W, B, C)
+        tgt = query_embed                                                       # (H* W, B, C)
 
         query_mask = torch.zeros((bs, *self.query_shape), dtype=torch.bool, device=src.device)
-        query_pos_embed = self.tgt_pos_embed_layer(query_mask)  # (B, C, H, W)
-        query_pos_embed = query_pos_embed.flatten(2).permute(2, 0, 1)  # (H* W, B, C)
+        query_pos_embed = self.tgt_pos_embed_layer(query_mask)                  # (B, C, H, W)
+        query_pos_embed = query_pos_embed.flatten(2).permute(2, 0, 1)           # (H* W, B, C)
 
-        memory = self.encoder.forward(src, None, mask, src_pos_embed)  # (H* W, B, C)
+        memory = self.encoder.forward(src, None, mask, src_pos_embed)     # (H* W, B, C)
         hs = self.decoder.forward(tgt, memory, None, None, None, mask, src_pos_embed, query_pos_embed)  # (M, H* W, B, C)
-        ys = hs.permute(0, 2, 3, 1)  # (M, B, C, H* W)
-        ys = ys.reshape(*ys.shape[:-1], *self.query_shape)  # (M, B, C, H, W)
+        ys = hs.permute(0, 2, 3, 1)                                       # (M, B, C, H* W)
+        ys = ys.reshape(*ys.shape[:-1], *self.query_shape)                      # (M, B, C, H, W)
 
         return memory, hs, ys
 

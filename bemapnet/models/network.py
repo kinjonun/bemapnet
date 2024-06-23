@@ -19,13 +19,15 @@ class BeMapNet(nn.Module):
         outputs = {}
         outputs.update({k: inputs[k] for k in ["images", "extra_infos"]})
         outputs.update({k: inputs[k].float()for k in ["extrinsic", "intrinsic", "ida_mats"]})
-        # pdb.set_trace()
+
         if self.use_depth_loss:
-            outputs.update({k: inputs[k].float() for k in ["lidar_calibrated_sensor"]})
+            outputs.update({k: inputs[k].float() for k in ['lidar_depth', "lidar_calibrated_sensor"]})
+        # pdb.set_trace()                                # ['lidar_depth']:  [1, 6, 384, 896]
         outputs.update(self.im_backbone(outputs))
         outputs.update(self.bev_decoder(outputs))
         outputs.update(self.ins_decoder(outputs))
         outputs.update(self.output_head(outputs))
+        # pdb.set_trace()
         return outputs
 
     @staticmethod

@@ -114,6 +114,9 @@ class PiecewiseBezierMapOutputHead(nn.Module):
                 for j in range(self.num_classes):
                     dt_sem_masks[i][j] = self.up_sample(self.semantic_heads[j](x_sem))
             ret["outputs"].update({"sem_masks": dt_sem_masks})
+
+        if 'pred_depth' in inputs:
+            ret['outputs'].update({"pred_depth": inputs['pred_depth'], "lidar_depth": inputs['lidar_depth']})
         return ret
 
     def up_sample(self, x, tgt_shape=None):

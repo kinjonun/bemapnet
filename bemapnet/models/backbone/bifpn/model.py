@@ -359,7 +359,7 @@ class BiFPN(nn.Module):
             im_nek_features = checkpoint.checkpoint(self._forward, *im_bkb_features)
         else:
             im_nek_features = self._forward(*im_bkb_features)
-        # import pdb; pdb.set_trace()
+        # pdb.set_trace()
         im_nek_features = [torch.cat([self.up_sample(x, tgt_shape=self.tgt_shape) for x in im_nek_features], dim=1)]
         return im_nek_features
 

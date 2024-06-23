@@ -76,7 +76,7 @@ class EXPConfig:
                 fpn_num_filters=128,           # 128 -> 120  avoid OOM only
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True, 
-                tgt_shape=(21, 49)
+                tgt_shape=(12, 28)
             ),
         ),
         bev_decoder=dict(
@@ -85,7 +85,7 @@ class EXPConfig:
                 key='im_nek_features',
                 in_channels=640,               # 120*5   fpn_num_filters*5  (p3-p7_out)
                 num_camera=6,
-                src_shape=(21, 49*6),
+                src_shape=(12, 28*6),
                 query_shape=(64, 32),
                 d_model=512,
                 nhead=8,

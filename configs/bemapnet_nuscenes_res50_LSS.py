@@ -11,8 +11,7 @@ from torch.utils.data.distributed import DistributedSampler
 from bemapnet.models.network import BeMapNet
 from bemapnet.engine.core import BeMapNetCli
 from bemapnet.engine.experiment import BaseExp
-from bemapnet.dataset.nusc_dataset import NuScenesMapDataset
-from bemapnet.dataset.nuscenes_lss import NuScenesMapDatasetDepth
+from bemapnet.dataset.nusc_dataset import NuScenesMapDatasetDepth
 from bemapnet.dataset.transform import Normalize, ToTensor
 from bemapnet.utils.misc import get_param_groups, is_distributed
 
@@ -88,7 +87,7 @@ class EXPConfig:
                 fpn_num_filters=128,              # 128 -> 120  avoid OOM only
                 norm_layer=nn.SyncBatchNorm,
                 use_checkpoint=True, 
-                tgt_shape=(21, 49)
+                tgt_shape=(12, 28)
             ),
         ),
         bev_decoder=dict(
@@ -155,8 +154,11 @@ class EXPConfig:
                         weight=[0.4, 0.4, 0.4, 0.8, 1.2, 1.6],
                     ),
                     loss_weight=dict(
-                        sem_loss=0.5,
-                        obj_loss=2, ctr_loss=5, end_loss=2, msk_loss=5, curve_loss=10, recovery_loss=1)
+                        sem_loss=0.5, depth_loss=3,
+                        obj_loss=2, ctr_loss=5, end_loss=2, msk_loss=5, curve_loss=10, recovery_loss=1),
+                    lss_loss=dict(
+                        grid_config=grid_config, dbound=dbound, feat_down_sample=32,
+                    ),
                 ),
                 matcher_conf=dict(
                     cost_obj=2, cost_ctr=5, cost_end=2, cost_mask=5, cost_curve=10, cost_recovery=1,
@@ -198,7 +200,7 @@ class Exp(BaseExp):
         self.dump_interval = 1
         self.eval_interval = 1
         self.print_interval = 100
-        self.data_loader_workers = 1
+        self.data_loader_workers = 0
         self.num_keep_latest_ckpt = 1
         self.enable_tensorboard = True
         milestones = self.exp_config.scheduler_setup["milestones"]

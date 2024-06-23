@@ -352,9 +352,9 @@ class LSSTransform(BaseTransform):
         images = self.input_proj(images.view(bs*n, c, h, w))
         c = images.shape[1]
         images = images.view(bs, n, c, h, w)
-        x, depth = super().forward(images, img_metas)
+        x, depth = super().forward(images, img_metas)     # [1, 256, 400, 200]; [1, 6, 68, 21, 49]
         # pdb.set_trace()
-        x = self.downsample(x)
+        x = self.downsample(x)                            # [1, 256, 200, 100]
         ret_dict = dict(
             bev=x,
             depth=depth,
@@ -370,7 +370,7 @@ class LSSTransform(BaseTransform):
         """
         B, N, H, W = gt_depths.shape
         gt_depths = gt_depths.view(B * N, H // self.feat_down_sample, self.feat_down_sample,
-                                   W // self.feat_down_sample, self.feat_down_sample, 1)
+                                          W // self.feat_down_sample, self.feat_down_sample, 1)
         gt_depths = gt_depths.permute(0, 1, 3, 5, 2, 4).contiguous()
         gt_depths = gt_depths.view(-1, self.feat_down_sample * self.feat_down_sample)
         # 把gt_depth做feat_down_sample倍数的采样
@@ -393,9 +393,9 @@ class LSSTransform(BaseTransform):
 
         depth_labels = self.get_downsampled_gt_depth(depth_labels)
         depth_preds = depth_preds.permute(0, 1, 3, 4, 2).contiguous().view(-1, self.D)
-        # fg_mask = torch.max(depth_labels, dim=1).values > 0.0 # 只计算有深度的前景的深度loss
+        # fg_mask = torch.max(depth_labels, dim=1).values > 0.0    # 只计算有深度的前景的深度loss
 
-        fg_mask = depth_labels > 0.0  # 只计算有深度的前景的深度loss
+        fg_mask = depth_labels > 0.0                               # 只计算有深度的前景的深度loss
         depth_labels = depth_labels[fg_mask]
         depth_preds = depth_preds[fg_mask]
         with autocast(enabled=False):
@@ -566,7 +566,7 @@ class TransformerDepth(nn.Module):
 
         post_trans = torch.zeros(bs, c, 3).cuda()
         mlp_input = self.get_mlp_input(camera2ego, intrinsic, ida_mats, post_trans)
-        depth = self.get_cam_feats(images, mlp_input)              # 原 [2, 6, 68, 15, 25]
+        # depth = self.get_cam_feats(images, mlp_input)              # 原 [2, 6, 68, 15, 25]
 
         return memory, hs, ys
 
