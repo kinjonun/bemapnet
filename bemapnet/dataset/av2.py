@@ -7,6 +7,9 @@ from copy import deepcopy
 from skimage import io as skimage_io
 from torch.utils.data import Dataset
 from .nusc_dataset import depth_transform, map_pointcloud_to_image
+import pandas as pd
+from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
 
 class Argoverse2MapDataset(Dataset):
     def __init__(self, img_key_list, map_conf, ida_conf, bezier_conf, transforms, data_split="training"):
@@ -169,6 +172,7 @@ class Argoverse2MapDatasetDepth(Dataset):
         split_path = os.path.join(self.split_dir, f'{self.split_mode}_timestamp_list.txt')
         self.tokens = [token.strip() for token in open(split_path).readlines()]
         self.transforms = transforms
+        self.return_depth = True
 
     def __getitem__(self, idx: int):
         token = self.tokens[idx]
@@ -178,58 +182,64 @@ class Argoverse2MapDatasetDepth(Dataset):
         data_dict = {key: sample[key].tolist() for key in sample.files}
         input_dict = data_dict["input_dict"]
 
-        lidar_filename = np.array(input_dict['lidar_filename']).tolist()
+        lidar_filename = np.array(input_dict['lidar_path']).tolist()
         lidar_calibrated_sensor = dict(
-            rotation=np.eye(3),
+            rotation=R.from_matrix(np.eye(3)).as_quat(),
             translation=np.zeros(3)
             )
         lidar_ego_pose = dict(
-            rotation=input_dict['ego2global_translation'],
-            translation=input_dict['ego2global_rotation']
+            rotation=R.from_matrix(input_dict['ego2global_rotation']).as_quat(),
+            translation=input_dict['ego2global_translation']
             )
-        lidar_points = np.fromfile(os.path.join(self.nusc_root, lidar_filename), dtype=np.float32,
-                                   count=-1).reshape(-1, 5)[..., :4]
 
-        for im_path in input_dict['img_filename']:
-            img = skimage_io.imread(im_path)
-            img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
-            images.append(img)
-            ida_mats.append(ida_mat)
+        # lidar_points = np.fromfile(lidar_filename, dtype=np.float32, count=-1) # .reshape(-1, 5)[..., :4]
+        lidar_points = pd.read_feather(lidar_filename).to_numpy()[..., :4]
+        # pdb.set_trace()
 
-        cam_ego = np.stack([np.eye(4) for _ in range(input_dict["ego2cam"].shape[0])], axis=0)
+        # cam_ego = np.stack([np.eye(4) for _ in range(input_dict["ego2cam"].shape[0])], axis=0)
         for i in range(len(input_dict['img_filename'])):
             im_path = input_dict['img_filename'][i]
             img = skimage_io.imread(im_path)
             cam_calibrated_sensor = dict(
-                rotation=input_dict['ego2cam'][i],
-                translation=input_dict['ego2cam'][i],
-                camera_intrinsic=np.array(input_dict['camera_intrinsics'])
+                rotation=R.from_matrix(input_dict['camera2ego'][i][:3, :3]).as_quat(),
+                translation=input_dict['camera2ego'][i][:3, 3],
+                camera_intrinsic=np.array(input_dict['camera_intrinsics'][i][:3, :3])     #
                 )
             cam_ego_pose = dict(
-                rotation=input_dict['cam_ego_pose_rots'][i],
-                translation=input_dict['cam_ego_pose_trans'][i]
+                rotation=R.from_matrix(input_dict['camego2global'][i][:3, :3]).as_quat(),
+                translation=input_dict['camego2global'][i][:3, 3]
                 )
-            cam_ego[i, :3, :3] = input_dict['cam_ego_pose_rots'][i]
-            cam_ego[i, :3, 3] = input_dict['cam_ego_pose_trans'][i]
-            # pdb.set_trace()
+            # cam_ego[i, :3, :3] = input_dict['camego2global'][i]
+            # cam_ego[i, :3, 3] = input_dict['camego2global'][i]
+
             if self.return_depth:
                 pts_img, depth = map_pointcloud_to_image(lidar_points.copy(), img.shape[:2], lidar_calibrated_sensor.copy(),
                                                      lidar_ego_pose.copy(), cam_calibrated_sensor, cam_ego_pose)
                 point_depth = np.concatenate([pts_img[:2, :].T, depth[:, None]], axis=1).astype(np.float32)
                 point_depth_augmented = depth_transform(point_depth, img.shape[:2], resize_dims, crop, flip, rotate)
                 lidar_depth.append(point_depth_augmented)
-
+            # pdb.set_trace()
             img, ida_mat = self.img_transform(img, resize_dims, crop, flip, rotate)
             images.append(img)
             ida_mats.append(ida_mat)
 
+        # for i in range(len(lidar_depth)):
+        #     plt.imshow(lidar_depth[i], cmap='hot')
+        #     plt.colorbar()  # 添加颜色条
+        #     plt.show()  # 显示图片
+
+        # for i in range(lidar_depth[5].shape[0]):
+        #     for j in range(lidar_depth[0].shape[1]):
+        #         depth = lidar_depth[0][i][j]
+        #         if depth > 0:
+        #             print(depth)
+        # pdb.set_trace()
 
         extrinsic = np.stack([np.eye(4) for _ in range(len(input_dict["ego2cam"]))], axis=0)
         intrinsic = np.stack([np.eye(3) for _ in range(len(input_dict["camera_intrinsics"]))], axis=0)
         extrinsic[:, :, :] = input_dict["ego2cam"]
         camera_intrinsics = np.array(input_dict['camera_intrinsics'])
         intrinsic[:, :, :] = camera_intrinsics[:, :3, :3]
-        lidar2ego = np.eye(4)
 
         ctr_points = np.zeros((self.max_instances, max(self.max_pieces) * max(self.num_degree) + 1, 2), dtype=np.float)
         ins_labels = np.zeros((self.max_instances, 3), dtype=np.int16) - 1
@@ -258,10 +268,14 @@ class Argoverse2MapDatasetDepth(Dataset):
         item = dict(
             images=images, targets=dict(masks=masks, points=ctr_points, labels=ins_labels),
             extrinsic=np.stack(extrinsic), intrinsic=np.stack(intrinsic), ida_mats=np.stack(ida_mats),
-            extra_infos=dict(token=token, img_key_list=self.img_key_list, map_size=self.ego_size, do_flip=flip)
+            extra_infos=dict(token=token, img_key_list=self.img_key_list, map_size=self.ego_size, do_flip=flip),
+            lidar_calibrated_sensor=np.eye(4),
         )
         if self.transforms is not None:
             item = self.transforms(item)
+
+        if self.return_depth:
+            item['lidar_depth'] = np.stack(lidar_depth)
         return item
 
     def __len__(self):
